@@ -148,4 +148,7 @@ public class SystemConfigService {
     public static final String KEY_EXTERNAL_API_KEY    = "ifdain.external_api_key";
     public static final String KEY_CALLBACK_MAX_RETRIES = "ifdain.callback_max_retries";
     public static final String KEY_CALLBACK_TIMEOUT_MS  = "ifdain.callback_timeout_ms";
+
+    // 浏览器自动化配置键
+    public static final String KEY_AFDIAN_COOKIE = "ifdain.afdian_cookie";
 }

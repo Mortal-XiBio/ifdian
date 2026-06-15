@@ -76,3 +76,27 @@ ifdain:
   redis-port: 6379
   redis-password:
   redis-database: 0
+
+---
+# ============================================================
+# production 模式 (Nginx 反向代理 + MySQL)
+# 激活: --spring.profiles.active=production
+# ============================================================
+spring:
+  config:
+    activate:
+      on-profile: production
+  datasource:
+    url: jdbc:mysql://localhost:3306/ifdain?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: root
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+server:
+  # 运行在反向代理之后，信任代理传递的 X-Forwarded-* 头
+  forward-headers-strategy: native

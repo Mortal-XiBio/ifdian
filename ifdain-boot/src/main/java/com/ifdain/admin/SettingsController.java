@@ -1,5 +1,6 @@
 package com.ifdain.admin;
 
+import com.ifdain.automation.BrowserAutomationService;
 import com.ifdain.entity.SystemConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -68,6 +69,11 @@ public class SettingsController {
         model.addAttribute("callbackMaxRetries", configService.getOrDefault(SystemConfigService.KEY_CALLBACK_MAX_RETRIES, "3"));
         model.addAttribute("callbackTimeoutMs", configService.getOrDefault(SystemConfigService.KEY_CALLBACK_TIMEOUT_MS, "10000"));
 
+        // 浏览器自动化 — 爱发电 Cookie
+        String cookieVal = configService.getOrDefault(BrowserAutomationService.KEY_AFDIAN_COOKIE, "");
+        model.addAttribute("afdianCookieConfigured", !cookieVal.isBlank());
+        model.addAttribute("afdianCookie", maskToken(cookieVal));
+
         // 数据库状态
         model.addAttribute("dbMode", databaseInitializer.getDbMode());
         model.addAttribute("dbProduct", databaseInitializer.getDbProductName());
@@ -97,6 +103,7 @@ public class SettingsController {
                                @RequestParam(required = false) String externalApiKey,
                                @RequestParam(required = false) String callbackMaxRetries,
                                @RequestParam(required = false) String callbackTimeoutMs,
+                               @RequestParam(required = false) String afdianCookie,
                                RedirectAttributes attr) {
 
         if (userId != null) {
@@ -151,6 +158,12 @@ public class SettingsController {
         }
         if (callbackTimeoutMs != null) {
             configService.set(SystemConfigService.KEY_CALLBACK_TIMEOUT_MS, callbackTimeoutMs, "回调 HTTP 超时(ms)");
+        }
+
+        // 浏览器自动化 — 爱发电 Cookie
+        if (afdianCookie != null && !afdianCookie.isBlank()) {
+            configService.set(BrowserAutomationService.KEY_AFDIAN_COOKIE, afdianCookie,
+                    "爱发电登录 Cookie (JSON 数组，用于浏览器自动化)");
         }
 
         attr.addFlashAttribute("success", "设置已保存");

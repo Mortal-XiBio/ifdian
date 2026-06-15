@@ -19,6 +19,11 @@
     <description>爱发电支付集成 — 可直接运行的 Spring Boot 应用</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.41.0</version>
+        </dependency>
         <!-- 核心模块 -->
         <dependency>
             <groupId>com.ifdain</groupId>
@@ -64,6 +69,13 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
+        </dependency>
+
+        <!-- Playwright (浏览器自动化 — 方案创建 fallback) -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.41.0</version>
         </dependency>
 
         <!-- Test -->

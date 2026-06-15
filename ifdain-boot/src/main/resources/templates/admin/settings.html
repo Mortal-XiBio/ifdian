@@ -60,6 +60,30 @@
             </div>
         </div>
 
+        <!-- 浏览器自动化 — 爱发电 Cookie -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-robot me-1"></i>浏览器自动化 — 爱发电 Cookie</h5></div>
+            <div class="card-body">
+                <div class="mb-0">
+                    <label class="form-label">爱发电登录 Cookie <small>(JSON 数组格式)</small></label>
+                    <textarea name="afdianCookie" class="form-control font-monospace" rows="4"
+                              th:text="${afdianCookie}"
+                              placeholder="留空则不修改。格式: [{&quot;name&quot;:&quot;xxx&quot;,&quot;value&quot;:&quot;yyy&quot;,&quot;domain&quot;:&quot;.ifdian.net&quot;,...}]"></textarea>
+                    <div class="form-text">
+                        <i class="bi bi-info-circle"></i>
+                        用于方案创建的浏览器自动化 fallback。在浏览器中登录爱发电后，通过开发者工具 (F12) → Application → Cookies → ifdian.net，复制所有 Cookie 为 JSON 数组后粘贴到这里。
+                        留空则不使用浏览器自动化（仅使用页面嵌入模式）。
+                    </div>
+                    <div th:if="${afdianCookieConfigured}" class="mt-1">
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> 已配置</span>
+                    </div>
+                    <div th:unless="${afdianCookieConfigured}" class="mt-1">
+                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 未配置 — 浏览器自动化不可用</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Redis -->
         <div class="card mb-3">
             <div class="card-header"><h5 class="mb-0"><i class="bi bi-database me-1"></i>Redis 缓存配置</h5></div>

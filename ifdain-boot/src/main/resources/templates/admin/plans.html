@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{admin/layout :: layout(content=~{::body})}">
+<head>
+    <title>方案管理 - 管理后台</title>
+</head>
+<body>
+<div th:fragment="content">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+        <h1 class="h3">方案管理</h1>
+        <small class="text-muted">管理爱发电赞助方案</small>
+    </div>
+
+    <div th:if="${!apiConfigured}" class="alert alert-warning small">
+        <i class="bi bi-exclamation-triangle"></i>
+        请先在 <a th:href="@{${basePath} + '/settings'}">系统设置</a> 中配置爱发电 User ID 和 API Token，才能使用 API 功能。
+    </div>
+
+    <div class="row g-3">
+        <!-- 左侧：操作区 -->
+        <div class="col-lg-6">
+
+            <!-- 创建方案 — 双通道：iframe 嵌入 + 浏览器自动化 fallback -->
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-plus-circle me-1"></i>创建 / 管理方案</h6>
+                    <div class="btn-group btn-group-sm" id="modeToggle" role="group">
+                        <button type="button" class="btn btn-outline-primary active" id="btnModeIframe"
+                                onclick="switchMode('iframe')">
+                            <i class="bi bi-window"></i> 页面嵌入
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" id="btnModeBrowser"
+                                onclick="switchMode('browser')"
+                                th:disabled="${!browserAutomationAvailable}">
+                            <i class="bi bi-robot"></i> 浏览器自动化
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-2">
+
+                    <!-- 状态栏 -->
+                    <div id="createStatus" class="alert alert-info small py-1 mb-2 d-none">
+                        <i class="bi bi-hourglass-split"></i> <span id="createStatusText"></span>
+                    </div>
+
+                    <!-- 方案一：iframe 嵌入爱发电页面 -->
+                    <div id="iframePanel">
+                        <div class="ratio ratio-16x9" style="max-height:450px;">
+                            <iframe id="afdianIframe"
+                                    src="about:blank"
+                                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+                                    loading="lazy"
+                                    style="border:1px solid #dee2e6; border-radius:4px;"
+                                    title="爱发电创作中心">
+                            </iframe>
+                        </div>
+                        <div class="text-muted small mt-1">
+                            <i class="bi bi-info-circle"></i>
+                            在嵌入页面中直接操作爱发电创作中心。如果页面无法加载，将自动切换到浏览器自动化模式。
+                        </div>
+                    </div>
+
+                    <!-- 方案二：浏览器自动化表单 (默认隐藏) -->
+                    <div id="browserPanel" style="display:none;">
+                        <p class="text-muted small mb-2">
+                            浏览器自动化模式将在服务器端启动无头浏览器，自动在爱发电官网完成方案创建。
+                            请确保已在系统设置中配置爱发电登录 Cookie。
+                        </p>
+                        <div th:if="${!afdianCookieConfigured}" class="alert alert-warning small py-1 mb-2">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            尚未配置爱发电登录 Cookie，请先在
+                            <a th:href="@{${basePath} + '/settings'}">系统设置</a> 中配置 <code>ifdain.afdian_cookie</code>。
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small">方案名称 <span class="text-danger">*</span></label>
+                            <input type="text" id="planTitle" class="form-control form-control-sm"
+                                   placeholder="例如: 每月奶茶赞助">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small">月付价格 (元)</label>
+                            <input type="number" id="planPrice" class="form-control form-control-sm"
+                                   placeholder="例如: 5.00" min="0" step="0.01">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small">方案描述</label>
+                            <textarea id="planDesc" class="form-control form-control-sm" rows="2"
+                                      placeholder="为赞助者提供的回报说明..."></textarea>
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <button type="button" class="btn btn-primary btn-sm"
+                                    th:disabled="${!browserAutomationAvailable || !afdianCookieConfigured}"
+                                    onclick="createPlanViaBrowser()">
+                                <i class="bi bi-robot"></i> 创建方案
+                            </button>
+                            <div id="createLoading" class="d-none">
+                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                <span class="ms-1 small text-muted">正在通过浏览器自动化创建，请稍候...</span>
+                            </div>
+                        </div>
+
+                        <!-- 创建结果 -->
+                        <div id="createResult" class="mt-2 d-none"></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 发现方案 -->
+            <div class="card mb-3 border-success">
+                <div class="card-header bg-success bg-opacity-10">
+                    <h6 class="mb-0"><i class="bi bi-lightbulb me-1"></i>发现赞助方案</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">从爱发电 API 的近期订单中自动提取方案 ID 和名称。爱发电不提供方案列表接口，此功能通过扫描已有订单来发现方案。</p>
+                    <div class="row mb-2">
+                        <div class="col">
+                            <label class="form-label small">扫描页数</label>
+                            <input type="number" id="discoverMaxPages" class="form-control form-control-sm" value="3" min="1" max="20">
+                        </div>
+                        <div class="col">
+                            <label class="form-label small">每页条数</label>
+                            <input type="number" id="discoverPerPage" class="form-control form-control-sm" value="100" min="1" max="100">
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <button type="button" class="btn btn-success btn-sm" th:disabled="${!apiConfigured}"
+                                onclick="discoverPlans()">
+                            <i class="bi bi-search"></i> 发现方案
+                        </button>
+                    </div>
+                    <div id="discoverLoading" class="text-center py-2 d-none">
+                        <div class="spinner-border spinner-border-sm text-success" role="status"></div>
+                        <span class="ms-2 small text-muted">正在扫描订单...</span>
+                    </div>
+                    <div id="discoverResult" class="mt-2 d-none"></div>
+                </div>
+            </div>
+
+            <!-- 查询方案详情 -->
+            <div class="card mb-3">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-box-seam me-1"></i>查询方案详情</h6></div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label small">方案 ID (必填)</label>
+                        <input type="text" id="queryPlanId" class="form-control form-control-sm"
+                               placeholder="例如: a45353328af911eb973052540025c377" required>
+                    </div>
+                    <div class="text-end">
+                        <button type="button" class="btn btn-primary btn-sm" th:disabled="${!apiConfigured}"
+                                onclick="queryPlanDetail()">
+                            <i class="bi bi-search"></i> 查询
+                        </button>
+                    </div>
+                    <div id="queryLoading" class="text-center py-2 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <span class="ms-2 small text-muted">正在查询...</span>
+                    </div>
+                    <div id="queryResult" class="mt-2 d-none"></div>
+                </div>
+            </div>
+
+            <!-- 本地方案汇总 -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-database me-1"></i>本地方案汇总</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div th:if="${#lists.isEmpty(planSummary)}" class="text-center text-muted py-4 small">
+                        暂无本地订单数据，请先通过 API 工具同步订单。
+                    </div>
+                    <table th:if="${!#lists.isEmpty(planSummary)}" class="table table-sm table-striped mb-0">
+                        <thead>
+                        <tr>
+                            <th>方案 ID</th>
+                            <th class="text-end">订单数</th>
+                            <th class="text-end">总金额</th>
+                            <th style="width:50px"></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr th:each="plan : ${planSummary}">
+                            <td class="text-mono small" th:text="${plan.planId}">plan_xxx</td>
+                            <td class="text-end small" th:text="${plan.orderCount}">0</td>
+                            <td class="text-end small">¥<span th:text="${#numbers.formatDecimal(plan.totalAmount, 0, 2)}">0.00</span></td>
+                            <td>
+                                <button class="btn btn-outline-primary btn-sm" style="font-size:0.7rem;"
+                                        th:attr="onclick='queryPlanById(\'' + ${plan.planId} + '\')'"
+                                        title="查询此方案详情">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：查询结果 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-info-circle me-1"></i>查询结果</h6>
+                </div>
+                <div class="card-body" id="resultPanel">
+                    <p class="text-muted small text-center py-3 mb-0">点击左侧按钮查看结果</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    var basePath = /*[[${basePath}]]*/ '/admin';
+    var csrfToken = /*[[${_csrf?.token}]]*/ '';
+    var csrfHeader = /*[[${_csrf?.headerName}]]*/ 'X-CSRF-TOKEN';
+    var browserAvailable = /*[[${browserAutomationAvailable ?: false}]]*/ false;
+    var cookieConfigured = /*[[${afdianCookieConfigured ?: false}]]*/ false;
+
+    // ===== 双通道模式管理 =====
+
+    /** 当前激活的模式: 'iframe' | 'browser' */
+    var currentMode = 'iframe';
+    /** iframe 是否已成功加载 */
+    var iframeLoaded = false;
+    /** iframe 探测超时计时器 */
+    var iframeTimeoutId = null;
+    /** 自动切换是否已被用户手动操作覆盖 */
+    var autoSwitchDisabled = false;
+
+    /**
+     * 切换显示模式
+     * @param {string} mode - 'iframe' 或 'browser'
+     */
+    function switchMode(mode) {
+        autoSwitchDisabled = true;
+        if (iframeTimeoutId) {
+            clearTimeout(iframeTimeoutId);
+            iframeTimeoutId = null;
+        }
+
+        currentMode = mode;
+        var iframePanel = document.getElementById('iframePanel');
+        var browserPanel = document.getElementById('browserPanel');
+        var btnIframe = document.getElementById('btnModeIframe');
+        var btnBrowser = document.getElementById('btnModeBrowser');
+        var statusEl = document.getElementById('createStatus');
+
+        if (mode === 'iframe') {
+            iframePanel.style.display = '';
+            browserPanel.style.display = 'none';
+            btnIframe.classList.add('active');
+            btnBrowser.classList.remove('active');
+            // 如果 iframe 还没加载过，尝试加载
+            if (!iframeLoaded) {
+                loadIframe();
+            } else {
+                setStatus('info', '页面嵌入模式已激活');
+            }
+        } else {
+            iframePanel.style.display = 'none';
+            browserPanel.style.display = '';
+            btnIframe.classList.remove('active');
+            btnBrowser.classList.add('active');
+            setStatus('info', '浏览器自动化模式已激活。请填入方案信息后点击「创建方案」。');
+        }
+    }
+
+    /** 设置状态栏 */
+    function setStatus(type, text) {
+        var statusEl = document.getElementById('createStatus');
+        statusEl.classList.remove('d-none', 'alert-info', 'alert-warning', 'alert-danger', 'alert-success');
+        statusEl.classList.add('alert-' + type);
+        document.getElementById('createStatusText').textContent = text;
+    }
+
+    /** 尝试加载 iframe */
+    function loadIframe() {
+        var iframe = document.getElementById('afdianIframe');
+        var iframeTimer = null;
+        var resolved = false;
+
+        // 超时探测：6 秒后如果 iframe 还没触发 load，视为被阻止
+        iframeTimeoutId = setTimeout(function() {
+            if (!resolved) {
+                resolved = true;
+                if (iframeTimer) clearInterval(iframeTimer);
+                iframeLoaded = false;
+                if (!autoSwitchDisabled) {
+                    setStatus('warning',
+                        '爱发电页面不允许在框架中嵌入，已自动切换到浏览器自动化模式。');
+                    switchToBrowserAuto();
+                }
+            }
+        }, 6000);
+
+        // 轮询检测 iframe 内容
+        var checkCount = 0;
+        iframeTimer = setInterval(function() {
+            checkCount++;
+            try {
+                // 尝试访问 iframe 内容 — 跨域时 title 通常可读取
+                var doc = iframe.contentDocument || iframe.contentWindow.document;
+                if (doc && doc.readyState === 'complete' && doc.body && doc.body.innerHTML.trim().length > 0) {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(iframeTimeoutId);
+                        clearInterval(iframeTimer);
+                        iframeLoaded = true;
+                        iframeTimeoutId = null;
+                        setStatus('success', '页面嵌入加载成功。您可以在下方直接操作爱发电创作中心。');
+                    }
+                    return;
+                }
+            } catch (e) {
+                // 跨域访问被拒绝 — 说明 iframe 可能加载了但同源策略阻止读取
+                // 这不算失败，只要 onload 触发就行
+            }
+
+            // 检查 iframe 的 contentWindow 是否可访问
+            try {
+                var w = iframe.contentWindow;
+                if (w && w.location && w.location.href && w.location.href !== 'about:blank') {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(iframeTimeoutId);
+                        clearInterval(iframeTimer);
+                        iframeLoaded = true;
+                        iframeTimeoutId = null;
+                        setStatus('success', '页面嵌入已连接。');
+                    }
+                    return;
+                }
+            } catch (e) {
+                // 跨域 — 无法读取 location
+            }
+
+            // 12 次轮询 (约 6 秒) 后仍未确认内容，视为被阻止
+            if (checkCount > 12 && !resolved) {
+                resolved = true;
+                clearTimeout(iframeTimeoutId);
+                clearInterval(iframeTimer);
+                iframeLoaded = false;
+                iframeTimeoutId = null;
+                if (!autoSwitchDisabled) {
+                    setStatus('warning',
+                        '爱发电页面不允许在框架中嵌入（可能设置了 X-Frame-Options），已自动切换到浏览器自动化模式。');
+                    switchToBrowserAuto();
+                }
+            }
+        }, 500);
+
+        // 通过 onload 事件
+        iframe.onload = function() {
+            if (!resolved) {
+                // onload 触发了，标记为可能成功
+                // 继续让轮询确认内容
+            }
+        };
+
+        iframe.onerror = function() {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(iframeTimeoutId);
+                clearInterval(iframeTimer);
+                iframeLoaded = false;
+                iframeTimeoutId = null;
+                if (!autoSwitchDisabled) {
+                    setStatus('danger',
+                        '页面嵌入加载失败，已自动切换到浏览器自动化模式。');
+                    switchToBrowserAuto();
+                }
+            }
+        };
+
+        // 开始加载
+        setStatus('info', '正在尝试加载爱发电创作中心...');
+        iframe.src = 'https://ifdian.net/dashboard';
+    }
+
+    /** 自动切换到浏览器自动化模式 */
+    function switchToBrowserAuto() {
+        currentMode = 'browser';
+        document.getElementById('iframePanel').style.display = 'none';
+        document.getElementById('browserPanel').style.display = '';
+        document.getElementById('btnModeIframe').classList.remove('active');
+        document.getElementById('btnModeBrowser').classList.add('active');
+        // 提示用户补充 Cookie 信息
+        if (!cookieConfigured) {
+            var extraMsg = document.createElement('div');
+            extraMsg.className = 'mt-1 small text-muted';
+            extraMsg.innerHTML = '<i class="bi bi-info-circle"></i> 使用浏览器自动化需要先在系统设置中配置爱发电登录 Cookie。';
+            document.getElementById('browserPanel').querySelector('p').after(extraMsg);
+        }
+    }
+
+    // ===== 浏览器自动化方案创建 =====
+
+    function createPlanViaBrowser() {
+        var title = document.getElementById('planTitle').value.trim();
+        if (!title) {
+            alert('请输入方案名称');
+            return;
+        }
+        var price = document.getElementById('planPrice').value.trim();
+        var desc = document.getElementById('planDesc').value.trim();
+
+        var loadingEl = document.getElementById('createLoading');
+        var resultEl = document.getElementById('createResult');
+        loadingEl.classList.remove('d-none');
+        resultEl.classList.add('d-none');
+
+        var formData = new URLSearchParams();
+        formData.append('title', title);
+        if (price) formData.append('price', price);
+        if (desc) formData.append('description', desc);
+
+        fetch(basePath + '/plans/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', [csrfHeader]: csrfToken },
+            body: formData.toString()
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            loadingEl.classList.add('d-none');
+            var html = '';
+            if (data.success) {
+                html += '<div class="alert alert-success small py-1 mb-2">';
+                html += '<i class="bi bi-check-circle"></i> ' + data.message;
+                if (data.planId) {
+                    html += '<br>方案 ID: <code class="text-mono">' + data.planId + '</code>';
+                    html += ' <button class="btn btn-outline-primary btn-sm ms-2" style="font-size:0.65rem" onclick="queryPlanById(\'' + data.planId + '\')"><i class="bi bi-search"></i> 查看详情</button>';
+                }
+                html += '</div>';
+                // 创建成功后自动触发发现方案以同步
+                setTimeout(function() { discoverPlans(); }, 1500);
+            } else {
+                var alertClass = data.needLogin ? 'alert-warning' : 'alert-danger';
+                html += '<div class="alert ' + alertClass + ' small py-1 mb-2">';
+                html += '<i class="bi bi-' + (data.needLogin ? 'exclamation-triangle' : 'x-circle') + '"></i> ';
+                html += (data.message || '创建失败');
+                html += '</div>';
+                if (data.needLogin) {
+                    html += '<div class="text-muted small mb-2">请在浏览器中登录爱发电后导出 Cookie，然后粘贴到系统设置的 <code>ifdain.afdian_cookie</code> 配置项中。</div>';
+                }
+                if (data.screenshotBase64) {
+                    html += '<details><summary class="small text-muted">故障截图</summary>';
+                    html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1" style="max-height:300px;" alt="截图">';
+                    html += '</details>';
+                }
+            }
+            resultEl.innerHTML = html;
+            resultEl.classList.remove('d-none');
+        })
+        .catch(function(err) {
+            loadingEl.classList.add('d-none');
+            resultEl.innerHTML = '<div class="alert alert-danger small py-1">请求失败: ' + err.message + '</div>';
+            resultEl.classList.remove('d-none');
+        });
+    }
+
+    // ===== 页面初始化 =====
+
+    (function init() {
+        // 页面加载后自动尝试 iframe
+        if (!autoSwitchDisabled) {
+            loadIframe();
+        }
+    })();
+
+    // ===== 发现方案 =====
+
+    function discoverPlans() {
+        var maxPages = document.getElementById('discoverMaxPages').value;
+        var perPage = document.getElementById('discoverPerPage').value;
+
+        document.getElementById('discoverLoading').classList.remove('d-none');
+        document.getElementById('discoverResult').classList.add('d-none');
+
+        var formData = new URLSearchParams();
+        formData.append('maxPages', maxPages);
+        formData.append('perPage', perPage);
+
+        fetch(basePath + '/plans/discover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', [csrfHeader]: csrfToken },
+            body: formData.toString()
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('discoverLoading').classList.add('d-none');
+            var html = '';
+            if (data.success && data.plans && data.plans.length > 0) {
+                html += '<div class="alert alert-success small py-1 mb-2">' + data.message + '</div>';
+                html += '<table class="table table-sm small mb-0"><thead><tr><th>方案 ID</th><th>方案名称</th><th></th></tr></thead><tbody>';
+                data.plans.forEach(function(p) {
+                    html += '<tr><td class="text-mono" style="font-size:0.7rem">' + (p.plan_id || '') + '</td>';
+                    html += '<td>' + (p.plan_title || '') + '</td>';
+                    html += '<td><button class="btn btn-outline-primary btn-sm" style="font-size:0.65rem" onclick="queryPlanById(\'' + (p.plan_id || '') + '\')"><i class="bi bi-search"></i></button></td></tr>';
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<div class="text-muted small">未发现方案。可尝试增加扫描页数。</div>';
+            }
+            document.getElementById('discoverResult').innerHTML = html;
+            document.getElementById('discoverResult').classList.remove('d-none');
+        })
+        .catch(function(err) {
+            document.getElementById('discoverLoading').classList.add('d-none');
+            document.getElementById('discoverResult').innerHTML = '<div class="alert alert-danger small py-1">请求失败: ' + err.message + '</div>';
+            document.getElementById('discoverResult').classList.remove('d-none');
+        });
+    }
+
+    function queryPlanById(planId) {
+        document.getElementById('queryPlanId').value = planId;
+        queryPlanDetail();
+    }
+
+    function queryPlanDetail() {
+        var planId = document.getElementById('queryPlanId').value.trim();
+        if (!planId) {
+            alert('请输入方案 ID');
+            return;
+        }
+
+        document.getElementById('queryLoading').classList.remove('d-none');
+        var formData = new URLSearchParams();
+        formData.append('planId', planId);
+
+        fetch(basePath + '/plans/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', [csrfHeader]: csrfToken },
+            body: formData.toString()
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('queryLoading').classList.add('d-none');
+            var html = '';
+            if (data.success) {
+                html += '<div class="alert alert-success small py-1 mb-2">查询成功</div>';
+                if (data.data) {
+                    html += '<table class="table table-sm small mb-2"><tbody>';
+                    Object.keys(data.data).forEach(function(key) {
+                        var val = data.data[key];
+                        html += '<tr><td class="text-muted" style="width:120px">' + key + '</td><td class="text-mono">' + (typeof val === 'object' ? JSON.stringify(val) : val) + '</td></tr>';
+                    });
+                    html += '</tbody></table>';
+                }
+            } else {
+                html += '<div class="alert alert-danger small py-1 mb-2">查询失败: ' + (data.em || data.message || '未知错误') + '</div>';
+            }
+            if (data.rawJson) {
+                html += '<details><summary class="small text-muted">原始 JSON</summary>';
+                html += '<pre class="bg-dark text-light p-2 rounded small mt-1" style="font-size:0.7rem; max-height:300px; overflow:auto">' + data.rawJson + '</pre></details>';
+            }
+            document.getElementById('resultPanel').innerHTML = html || '<p class="text-muted small text-center py-3 mb-0">无数据</p>';
+        })
+        .catch(function(err) {
+            document.getElementById('queryLoading').classList.add('d-none');
+            document.getElementById('resultPanel').innerHTML = '<div class="alert alert-danger small py-1">请求失败: ' + err.message + '</div>';
+        });
+    }
+</script>
+</body>
+</html>
