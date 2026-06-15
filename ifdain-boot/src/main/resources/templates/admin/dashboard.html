@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{admin/layout :: layout(content=~{::body})}">
+<head>
+    <title>仪表盘 - 管理后台</title>
+</head>
+<body>
+<div th:fragment="content">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+        <h1 class="h3">仪表盘</h1>
+        <small class="text-muted">数据概览</small>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card card-stat primary">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-1 text-muted">总订单数</h6>
+                    <h2 class="card-text mb-0" th:text="${totalOrders}">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card card-stat success">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-1 text-muted">已支付</h6>
+                    <h2 class="card-text mb-0" th:text="${paidOrders}">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card card-stat warning">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-1 text-muted">待处理</h6>
+                    <h2 class="card-text mb-0" th:text="${pendingOrders}">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card card-stat info">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-1 text-muted">最近 7 天</h6>
+                    <h2 class="card-text mb-0">
+                        <span th:text="${recent7Orders}">0</span>
+                        <small class="text-muted fs-6">/ ¥<span th:text="${recent7Amount}">0.00</span></small>
+                    </h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最近 30 天 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card card-stat info">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-1 text-muted">最近 30 天</h6>
+                    <h3 class="card-text mb-0">
+                        <span th:text="${recent30Orders}">0</span> 笔订单
+                        <small class="text-muted fs-6">/ 总计 ¥<span th:text="${recent30Amount}">0.00</span></small>
+                    </h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 按方案汇总 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-pie-chart"></i> 方案销售统计</h5>
+        </div>
+        <div class="card-body p-0">
+            <div th:if="${#lists.isEmpty(planSummary)}" class="text-center text-muted py-4">
+                暂无数据
+            </div>
+            <table th:if="${!#lists.isEmpty(planSummary)}" class="table table-striped mb-0">
+                <thead>
+                <tr>
+                    <th>方案 ID</th>
+                    <th class="text-end">订单数</th>
+                    <th class="text-end">总金额 (¥)</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="plan : ${planSummary}">
+                    <td class="text-mono" th:text="${plan.planId}">plan_xxx</td>
+                    <td class="text-end" th:text="${plan.orderCount}">0</td>
+                    <td class="text-end" th:text="${#numbers.formatDecimal(plan.totalAmount, 0, 2)}">0.00</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+</body>
+</html>

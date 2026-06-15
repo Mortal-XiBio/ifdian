@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{admin/layout :: layout(content=~{::body})}">
+<head>
+    <title>系统设置 - 管理后台</title>
+</head>
+<body>
+<div th:fragment="content">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+        <h1 class="h3">系统设置</h1>
+        <small class="text-muted">管理 API、Webhook、Redis 和账号配置</small>
+    </div>
+
+    <div th:if="${success}" class="alert alert-success alert-dismissible fade show py-2 small">
+        <i class="bi bi-check-circle"></i> <span th:text="${success}"></span>
+        <button type="button" class="btn-close py-2" data-bs-dismiss="alert"></button>
+    </div>
+    <div th:if="${error}" class="alert alert-danger alert-dismissible fade show py-2 small">
+        <i class="bi bi-exclamation-triangle"></i> <span th:text="${error}"></span>
+        <button type="button" class="btn-close py-2" data-bs-dismiss="alert"></button>
+    </div>
+
+    <form method="post" th:action="@{${basePath} + '/settings/save'}">
+        <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
+
+        <!-- 爱发电 API -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-key me-1"></i>爱发电 API 配置</h5></div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">User ID</label>
+                    <input type="text" name="userId" class="form-control" th:value="${userId}" placeholder="爱发电开发者 User ID">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">API Token</label>
+                    <input type="password" name="apiToken" class="form-control" th:value="${apiToken}" placeholder="留空则不修改">
+                    <div class="form-text">留空则保持原值。</div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">API 基础地址</label>
+                    <input type="text" name="apiBaseUrl" class="form-control" th:value="${apiBaseUrl}" placeholder="https://ifdian.net">
+                </div>
+            </div>
+        </div>
+
+        <!-- Webhook -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-hdd-rack me-1"></i>Webhook 配置</h5></div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Webhook 端点路径</label>
+                    <input type="text" name="webhookPath" class="form-control" th:value="${webhookPath}">
+                    <div class="form-text">回调 URL = <code th:text="${serverUrl} + ${webhookPath}">https://example.com/webhook/ifdian</code></div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">RSA 公钥 <small>(用于验证回调签名)</small></label>
+                    <textarea name="webhookPublicKey" class="form-control font-monospace" rows="3"
+                              th:text="${webhookPublicKey}"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Redis -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-database me-1"></i>Redis 缓存配置</h5></div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" name="redisEnabled" value="true" id="redisSwitch"
+                           th:checked="${redisEnabled}"
+                           onchange="document.querySelectorAll('.redisFields').forEach(el=>el.style.display=this.checked?'block':'none')">
+                    <label class="form-check-label" for="redisSwitch">启用 Redis</label>
+                    <div class="form-text">开启后使用 Redis 缓存，提升性能。</div>
+                </div>
+                <div class="redisFields" th:style="${redisEnabled} ? 'display:block' : 'display:none'">
+                    <div class="row g-2 mb-2">
+                        <div class="col-8"><label class="form-label">主机地址</label><input type="text" name="redisHost" id="rHost" class="form-control" th:value="${redisHost}"></div>
+                        <div class="col-4"><label class="form-label">端口</label><input type="number" name="redisPort" id="rPort" class="form-control" th:value="${redisPort}"></div>
+                    </div>
+                    <div class="mb-2"><label class="form-label">密码 <small>(留空则不修改)</small></label><input type="password" name="redisPassword" id="rPwd" class="form-control" th:value="${redisPassword}" placeholder="留空则不修改"></div>
+                    <div class="mb-2"><label class="form-label">数据库编号</label><input type="number" name="redisDatabase" id="rDb" class="form-control" th:value="${redisDatabase}" min="0" max="15"></div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="testRedis()"><i class="bi bi-plug"></i> 测试连接</button>
+                    <span id="rResult" class="small ms-2"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 外部 API 配置 -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-plug me-1"></i>外部 API 配置</h5></div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">External API Key <small>(用于 /api/external/* 鉴权)</small></label>
+                    <input type="password" name="externalApiKey" class="form-control" th:value="${externalApiKey}" placeholder="留空则不修改">
+                    <div class="form-text">外部程序调用 API 时需在 X-Api-Key 请求头中传入此密钥。</div>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">回调最大重试次数</label>
+                        <input type="number" name="callbackMaxRetries" class="form-control" th:value="${callbackMaxRetries}" min="0" max="10">
+                        <div class="form-text">支付成功回调失败时的重试次数，默认3。</div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">回调超时 (毫秒)</label>
+                        <input type="number" name="callbackTimeoutMs" class="form-control" th:value="${callbackTimeoutMs}" min="1000" max="60000" step="1000">
+                        <div class="form-text">向外部程序发送回调的 HTTP 超时，默认10000ms。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据库状态 -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-server me-1"></i>数据库状态</h5></div>
+            <div class="card-body">
+                <div class="row g-3 small">
+                    <div class="col-sm-6"><div class="text-muted mb-1">运行模式</div><span class="badge" th:classappend="${dbReady} ? 'bg-success' : 'bg-warning text-dark'" th:text="${dbMode}">embedded</span></div>
+                    <div class="col-sm-6"><div class="text-muted mb-1">数据库</div><span th:text="${dbProduct}">H2</span> <small class="text-muted" th:text="${dbVersion}"></small></div>
+                    <div class="col-sm-6"><div class="text-muted mb-1">表结构</div><span th:if="${dbReady}" class="text-success"><i class="bi bi-check-circle"></i> 就绪</span><span th:unless="${dbReady}" class="text-danger"><i class="bi bi-exclamation-triangle"></i> 未初始化</span></div>
+                    <div class="col-sm-6"><div class="text-muted mb-1">缓存</div><span th:if="${redisEnabled}" class="text-success"><i class="bi bi-database-check"></i> Redis</span><span th:unless="${redisEnabled}" class="text-muted">未启用</span></div>
+                </div>
+                <div class="mt-3 d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="testDataSource()"><i class="bi bi-plug"></i> 测试数据库连接</button>
+                    <button type="button" class="btn btn-outline-warning btn-sm" th:if="${!dbReady}" onclick="initDatabase()"><i class="bi bi-arrow-repeat"></i> 初始化数据表</button>
+                    <span id="dbResult" class="small ms-2 align-self-center"></span>
+                </div>
+                <div th:if="${!dbReady}" class="mt-2 alert alert-warning py-2 mb-0 small">
+                    <i class="bi bi-info-circle"></i> MySQL 模式下需要先初始化数据表。点击"初始化数据表"自动执行建表脚本。
+                </div>
+            </div>
+        </div>
+
+        <!-- 管理员账号 -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-person-lock me-1"></i>管理员账号</h5></div>
+            <div class="card-body">
+                <div class="mb-3"><label class="form-label">用户名</label><input type="text" name="adminUsername" class="form-control" th:value="${adminUsername}"></div>
+                <div class="mb-3"><label class="form-label">新密码 <small>(留空则不修改)</small></label><input type="password" name="adminPassword" class="form-control" minlength="6"></div>
+                <div class="mb-0"><label class="form-label">确认新密码</label><input type="password" name="adminPasswordConfirm" class="form-control"></div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>保存设置</button>
+        <a th:href="@{${basePath}}" class="btn btn-outline-secondary">取消</a>
+    </form>
+
+    <!-- 配置列表 -->
+    <div class="card mt-4">
+        <div class="card-header"><h5 class="mb-0"><i class="bi bi-list-ul me-1"></i>全部配置项</h5></div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-striped mb-0">
+                <thead><tr><th>配置键</th><th>配置值</th><th>描述</th></tr></thead>
+                <tbody>
+                <tr th:each="cfg : ${configs}">
+                    <td class="text-mono small" th:text="${cfg.configKey}"></td>
+                    <td class="small">
+                        <span th:if="${#strings.contains(cfg.configKey, 'token') or #strings.contains(cfg.configKey, 'password') or #strings.contains(cfg.configKey, 'key')}">
+                            ****
+                        </span>
+                        <span th:unless="${#strings.contains(cfg.configKey, 'token') or #strings.contains(cfg.configKey, 'password') or #strings.contains(cfg.configKey, 'key')}"
+                              th:text="${cfg.configValue}"></span>
+                    </td>
+                    <td class="small text-muted" th:text="${cfg.description}"></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    var basePath = /*[[${basePath}]]*/ '/admin';
+    function csrfHeader(){var el=document.querySelector('input[name="_csrf"]');return el?el.value:'';}
+
+    async function testRedis(){
+        var host=document.getElementById('rHost').value||'localhost';
+        var port=document.getElementById('rPort').value||'6379';
+        var pwd=document.getElementById('rPwd').value||'';
+        var db=document.getElementById('rDb').value||'0';
+        var span=document.getElementById('rResult');
+        span.innerHTML='<span class="text-muted"><i class="bi bi-hourglass-split"></i> 测试中...</span>';
+        try{
+            var fd=new URLSearchParams();fd.append('host',host);fd.append('port',port);fd.append('password',pwd);fd.append('database',db);
+            var r=await fetch(basePath+'/test/redis',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrfHeader()},body:fd});
+            var d=await r.json();
+            span.innerHTML=d.success?'<span class="text-success"><i class="bi bi-check-circle"></i> '+d.message+'</span>':'<span class="text-danger"><i class="bi bi-x-circle"></i> '+d.message+'</span>';
+        }catch(e){span.innerHTML='<span class="text-danger">请求失败</span>';}
+    }
+
+    async function testDataSource(){
+        var span=document.getElementById('dbResult');
+        span.innerHTML='<span class="text-muted"><i class="bi bi-hourglass-split"></i> 测试中...</span>';
+        try{
+            var r=await fetch(basePath+'/test/datasource',{method:'POST',headers:{'X-CSRF-TOKEN':csrfHeader()}});
+            var d=await r.json();
+            span.innerHTML=d.success?'<span class="text-success"><i class="bi bi-check-circle"></i> '+d.message+'</span>':'<span class="text-danger"><i class="bi bi-x-circle"></i> '+d.message+'</span>';
+        }catch(e){span.innerHTML='<span class="text-danger">请求失败</span>';}
+    }
+
+    async function initDatabase(){
+        var span=document.getElementById('dbResult');
+        span.innerHTML='<span class="text-muted"><i class="bi bi-hourglass-split"></i> 初始化中...</span>';
+        try{
+            var r=await fetch(basePath+'/test/init-db',{method:'POST',headers:{'X-CSRF-TOKEN':csrfHeader()}});
+            var d=await r.json();
+            span.innerHTML=d.success?'<span class="text-success"><i class="bi bi-check-circle"></i> '+d.message+'</span>':'<span class="text-danger"><i class="bi bi-x-circle"></i> '+d.message+'</span>';
+            if(d.success) setTimeout(function(){location.reload();},2000);
+        }catch(e){span.innerHTML='<span class="text-danger">请求失败</span>';}
+    }
+</script>
+</body>
+</html>

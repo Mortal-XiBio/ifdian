@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{admin/layout :: layout(content=~{::body})}">
+<head>
+    <title>订单详情 - 管理后台</title>
+</head>
+<body>
+<div th:fragment="content">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+        <h1 class="h3">订单详情</h1>
+        <a th:href="@{${basePath} + '/orders'}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回列表
+        </a>
+    </div>
+
+    <div th:if="${order == null}" class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle"></i> 订单不存在或已被删除。
+    </div>
+
+    <div th:if="${order != null}">
+        <!-- 基本信息 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> 基本信息</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">ID</dt>
+                    <dd class="col-sm-9 text-mono" th:text="${order.id}">1</dd>
+
+                    <dt class="col-sm-3">爱发电订单号</dt>
+                    <dd class="col-sm-9 text-mono" th:text="${order.outTradeNo}">out_trade_no</dd>
+
+                    <dt class="col-sm-3">自定义订单 ID</dt>
+                    <dd class="col-sm-9 text-mono" th:text="${order.customOrderId} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">用户 ID</dt>
+                    <dd class="col-sm-9 text-mono" th:text="${order.userId}">user_id</dd>
+
+                    <dt class="col-sm-3">用户 Private ID</dt>
+                    <dd class="col-sm-9 text-mono" th:text="${order.userPrivateId} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">方案 ID</dt>
+                    <dd class="col-sm-9 text-mono" th:text="${order.planId}">plan_id</dd>
+
+                    <dt class="col-sm-3">赞助月数</dt>
+                    <dd class="col-sm-9" th:text="${order.sponsorMonth} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">产品类型</dt>
+                    <dd class="col-sm-9" th:text="${order.productType == 1} ? '售卖方案' : '常规方案'">常规方案</dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 金额信息 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-currency-yen"></i> 金额信息</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">实付金额</dt>
+                    <dd class="col-sm-9">
+                        <strong class="text-success fs-5">
+                            ¥ <span th:text="${#numbers.formatDecimal(order.totalAmount, 0, 2)}">0.00</span>
+                        </strong>
+                    </dd>
+
+                    <dt class="col-sm-3">显示金额 (折扣前)</dt>
+                    <dd class="col-sm-9" th:text="|¥ ${#numbers.formatDecimal(order.showAmount, 0, 2)}|">0.00</dd>
+
+                    <dt class="col-sm-3">折扣金额</dt>
+                    <dd class="col-sm-9" th:text="|¥ ${#numbers.formatDecimal(order.discount, 0, 2)}|">0.00</dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 状态信息 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-flag"></i> 状态信息</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">订单状态</dt>
+                    <dd class="col-sm-9">
+                        <span th:if="${order.status.value == 2}" class="badge bg-success fs-6">交易成功</span>
+                        <span th:if="${order.status.value != 2}" class="badge bg-secondary fs-6" th:text="|状态码: ${order.status.value}|">未知</span>
+                    </dd>
+
+                    <dt class="col-sm-3">业务处理</dt>
+                    <dd class="col-sm-9">
+                        <span th:if="${order.processed == 1}" class="badge bg-success">已处理</span>
+                        <span th:if="${order.processed == 0}" class="badge bg-warning text-dark">待处理</span>
+                    </dd>
+
+                    <dt class="col-sm-3">重试次数</dt>
+                    <dd class="col-sm-9" th:text="${order.retryCount}">0</dd>
+
+                    <dt class="col-sm-3">错误信息</dt>
+                    <dd class="col-sm-9 text-danger" th:text="${order.errorMsg} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">接收时间</dt>
+                    <dd class="col-sm-9" th:text="${order.receivedAt} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">创建时间</dt>
+                    <dd class="col-sm-9" th:text="${order.createdAt}">-</dd>
+
+                    <dt class="col-sm-3">更新时间</dt>
+                    <dd class="col-sm-9" th:text="${order.updatedAt}">-</dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 收货 & 备注 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-box-seam"></i> 收货信息 & 备注</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">收货人</dt>
+                    <dd class="col-sm-9" th:text="${order.addressPerson} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">电话</dt>
+                    <dd class="col-sm-9" th:text="${order.addressPhone} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">地址</dt>
+                    <dd class="col-sm-9" th:text="${order.addressAddress} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">用户留言</dt>
+                    <dd class="col-sm-9" th:text="${order.remark} ?: '-'">-</dd>
+
+                    <dt class="col-sm-3">SKU 明细</dt>
+                    <dd class="col-sm-9">
+                        <pre th:if="${order.skuDetail}" class="mb-0 small bg-light p-2 rounded"
+                             style="max-height: 200px; overflow: auto;"
+                             th:text="${order.skuDetail}">-</pre>
+                        <span th:if="${!order.skuDetail}">-</span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 原始数据 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-code-slash"></i> 原始 Webhook 数据
+                    <button class="btn btn-sm btn-outline-secondary float-end" type="button"
+                            onclick="toggleRawData()">展开/折叠</button>
+                </h5>
+            </div>
+            <div class="card-body" id="rawDataBlock" style="display: none;">
+                <pre class="mb-0 small bg-dark text-light p-3 rounded"
+                     style="max-height: 400px; overflow: auto;"
+                     th:text="${order.rawData} ?: '-'">-</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleRawData() {
+        var block = document.getElementById('rawDataBlock');
+        block.style.display = block.style.display === 'none' ? 'block' : 'none';
+    }
+</script>
+</body>
+</html>

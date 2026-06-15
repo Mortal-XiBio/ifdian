@@ -1,0 +1,38 @@
+# --- Build Output ---
+target/
+*.jar
+*.class
+
+# --- IDE ---
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.factorypath
+
+# --- Logs ---
+*.log
+app.log
+
+# --- Windows reserved device names (must never be tracked) ---
+nul
+
+# --- OS ---
+Thumbs.db
+.DS_Store
+
+# --- Spring Boot exploded ---
+BOOT-INF/
+
+# --- Build output files ---
+*build_out.txt
+*build_output.txt
+build_core.log
+build_core.bat
+gen.ps1
+_gen_readme.py
+
+# --- Temp ---
+*.tmp
+*.bak

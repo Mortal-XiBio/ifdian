@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{admin/layout :: layout(content=~{::body})}">
+<head>
+    <title>订单管理 - 管理后台</title>
+</head>
+<body>
+<div th:fragment="content">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+        <h1 class="h3">订单管理</h1>
+        <div class="d-flex align-items-center gap-2">
+            <small class="text-muted" th:text="${totalElements} + ' 条记录'">0 条记录</small>
+            <button class="btn btn-sm btn-warning" onclick="syncOrders()">
+                <i class="bi bi-cloud-download"></i> 拉取订单
+            </button>
+        </div>
+    </div>
+
+    <!-- 同步结果提示 -->
+    <div id="syncResult" class="alert alert-dismissible fade" style="display:none;" role="alert">
+        <span id="syncResultMsg"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+
+    <!-- 搜索 -->
+    <form method="get" th:action="@{${basePath} + '/orders'}" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <input type="text" name="keyword" class="form-control form-control-sm"
+                   placeholder="搜索订单号/用户ID/自定义ID/备注..." th:value="${keyword}">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 搜索</button>
+        </div>
+        <div class="col-auto">
+            <a th:href="@{${basePath} + '/orders'}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-x-circle"></i> 清除
+            </a>
+        </div>
+    </form>
+
+    <!-- 订单表格 -->
+    <div th:if="${#lists.isEmpty(orders)}" class="alert alert-info">
+        暂无订单数据。
+    </div>
+    <div th:if="${!#lists.isEmpty(orders)}" class="table-responsive">
+        <table class="table table-hover table-sm align-middle">
+            <thead class="table-dark">
+            <tr>
+                <th>#</th>
+                <th>订单号</th>
+                <th>用户 ID</th>
+                <th>方案 ID</th>
+                <th class="text-end">金额</th>
+                <th>状态</th>
+                <th>处理状态</th>
+                <th>创建时间</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="order : ${orders}">
+                <td th:text="${order.id}" class="text-mono">1</td>
+                <td class="text-mono order-id-col" th:text="${order.outTradeNo}">out_trade_no</td>
+                <td class="text-mono" th:text="${order.userId}">user_id</td>
+                <td class="text-mono" th:text="${order.planId}">plan_id</td>
+                <td class="text-end" th:text="${#numbers.formatDecimal(order.totalAmount, 0, 2)}">0.00</td>
+                <td>
+                    <span th:if="${order.status.value == 2}" class="badge bg-success">已支付</span>
+                    <span th:if="${order.status.value != 2}" class="badge bg-secondary" th:text="|状态: ${order.status.value}|">其他</span>
+                </td>
+                <td>
+                    <span th:if="${order.processed == 1}" class="badge bg-success">已处理</span>
+                    <span th:if="${order.processed == 0}" class="badge bg-warning text-dark">待处理</span>
+                </td>
+                <td class="text-mono small" th:text="${#temporals.format(order.createdAt, 'yyyy-MM-dd HH:mm')}">2026-01-01 12:00</td>
+                <td>
+                    <a th:href="@{${basePath} + '/orders/' + ${order.id}}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-eye"></i> 详情
+                    </a>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 分页 -->
+    <nav th:if="${totalPages > 1}" class="mt-3" th:with="safeKeyword=${keyword != null ? keyword : ''}">
+        <ul class="pagination pagination-sm justify-content-center">
+            <li class="page-item" th:classappend="${currentPage == 0} ? 'disabled'">
+                <a class="page-link" th:href="@{${basePath} + '/orders'(page=${currentPage - 1}, size=20, keyword=${safeKeyword})}">
+                    &laquo; 上一页
+                </a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link" th:text="|第 ${currentPage + 1} / ${totalPages} 页|">1 / 1</span>
+            </li>
+            <li class="page-item" th:classappend="${currentPage + 1 >= totalPages} ? 'disabled'">
+                <a class="page-link" th:href="@{${basePath} + '/orders'(page=${currentPage + 1}, size=20, keyword=${safeKeyword})}">
+                    下一页 &raquo;
+                </a>
+            </li>
+        </ul>
+    </nav>
+</div>
+<script th:inline="javascript">
+    var csrfToken = /*[[${_csrf.token}]]*/ '';
+    var csrfHeader = /*[[${_csrf.headerName}]]*/ 'X-CSRF-TOKEN';
+
+    async function syncOrders() {
+        var basePath = /*[[${basePath}]]*/ '/admin';
+        var btn = document.querySelector('button[onclick="syncOrders()"]');
+        var resultDiv = document.getElementById('syncResult');
+        var resultMsg = document.getElementById('syncResultMsg');
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 拉取中...';
+        resultDiv.style.display = 'none';
+
+        try {
+            var fd = new URLSearchParams();
+            fd.append('startPage', '1');
+            fd.append('perPage', '100');
+            fd.append('maxPages', '0');
+            var headers = {'Content-Type': 'application/x-www-form-urlencoded'};
+            if (csrfToken) {
+                headers[csrfHeader] = csrfToken;
+            }
+            var r = await fetch(basePath + '/orders/sync', {
+                method: 'POST',
+                headers: headers,
+                body: fd
+            });
+            var data = await r.json();
+            resultDiv.className = 'alert alert-success alert-dismissible fade show';
+            resultMsg.textContent = data.message;
+            resultDiv.style.display = 'block';
+            if (data.new_saved > 0) {
+                setTimeout(function() { location.reload(); }, 1500);
+            }
+        } catch(e) {
+            resultDiv.className = 'alert alert-danger alert-dismissible fade show';
+            resultMsg.textContent = '请求失败: ' + e;
+            resultDiv.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download"></i> 拉取订单';
+        }
+    }
+</script>
+</body>
+</html>

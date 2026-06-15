@@ -1,0 +1,3 @@
+# Ifdain Auto-Configuration
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.ifdain.config.IfdainAutoConfiguration
