@@ -36,8 +36,8 @@ public class BrowserAutomationService {
 
     /** 爱发电登录 Cookie 存储键 */
     public static final String KEY_AFDIAN_COOKIE = "ifdain.afdian_cookie";
-    /** 爱发电创作中心地址 */
-    private static final String AFDIAN_DASHBOARD = "https://ifdian.net/dashboard";
+    /** 爱发电方案管理地址 */
+    private static final String AFDIAN_PLAN_SETTINGS = "https://ifdian.net/setting/plan";
     /** 爱发电登录地址 */
     private static final String AFDIAN_LOGIN = "https://ifdian.net/login";
 
@@ -69,14 +69,21 @@ public class BrowserAutomationService {
                 Page page = context.newPage();
 
                 // 注入 Cookie 实现登录态
-                injectCookies(context, cookieJson);
+                int injectedCount = injectCookies(context, cookieJson);
+                if (injectedCount <= 0) {
+                    String reason = injectedCount == -1
+                            ? "Cookie 格式无法解析。请确保格式为 JSON 数组 [{name,value,...}] 或 document.cookie 字符串 \"key1=val1; key2=val2\""
+                            : "Cookie 解析后为空（0 条有效 Cookie），请检查 Cookie 内容";
+                    return PlanCreationResult.failed(reason);
+                }
 
-                // 打开创作中心
-                log.info("[BrowserAuto] Navigating to dashboard: {}", AFDIAN_DASHBOARD);
-                page.navigate(AFDIAN_DASHBOARD);
+                // 打开方案设置页面
+                log.info("[BrowserAuto] Navigating to plan settings: {}", AFDIAN_PLAN_SETTINGS);
+                page.navigate(AFDIAN_PLAN_SETTINGS);
 
-                // 等待页面加载
+                // 等待页面加载 + Vue SPA 渲染完成
                 page.waitForLoadState();
+                page.waitForTimeout(3000); // 等待 Vue SPA 异步渲染
 
                 // 检查是否需要登录
                 if (isLoginRequired(page)) {
@@ -168,51 +175,245 @@ public class BrowserAutomationService {
 
     /**
      * 注入 Cookie 到浏览器上下文
+     *
+     * <p>支持多种 Cookie 格式：</p>
+     * <ul>
+     *   <li>JSON 数组: [{name, value, domain, path, httpOnly, secure}, ...]</li>
+     *   <li>JSON 单对象: {name, value, domain, path, ...}</li>
+     *   <li>document.cookie 格式: "name1=value1; name2=value2; ..."</li>
+     * </ul>
+     *
+     * @return 注入的 Cookie 数量，-1 表示解析失败
      */
-    private void injectCookies(BrowserContext context, String cookieJson) {
+    private int injectCookies(BrowserContext context, String cookieJson) {
+        if (cookieJson == null || cookieJson.isBlank()) {
+            log.warn("[BrowserAuto] Cookie JSON is empty");
+            return 0;
+        }
+
+        String trimmed = cookieJson.trim();
+
+        // Format 1 & 2: JSON (array or single object)
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return injectCookiesFromJson(context, trimmed);
+        }
+
+        // Format 3: document.cookie 格式 "name1=value1; name2=value2"
+        if (trimmed.contains("=") && !trimmed.contains("\"")) {
+            return injectCookiesFromDocumentCookie(context, trimmed);
+        }
+
+        log.warn("[BrowserAuto] Unrecognized cookie format (doesn't look like JSON or document.cookie)");
+        return -1;
+    }
+
+    /**
+     * 从 JSON 格式注入 Cookie
+     */
+    private int injectCookiesFromJson(BrowserContext context, String json) {
         try {
-            // Cookie 格式: JSON 数组 [{name, value, domain, path, ...}]
-            // 也可以直接以 Netscape 格式存储原始 cookie 字符串
-            if (cookieJson.trim().startsWith("[")) {
-                List<Map<String, Object>> cookieList = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readValue(cookieJson, new TypeReference<List<Map<String, Object>>>() {});
-                List<Cookie> cookies = new ArrayList<>();
-                for (Map<String, Object> c : cookieList) {
-                    Cookie cookie = new Cookie(
-                            String.valueOf(c.get("name")),
-                            String.valueOf(c.get("value"))
-                    );
-                    if (c.containsKey("domain")) {
-                        cookie.setDomain(String.valueOf(c.get("domain")));
-                    }
-                    if (c.containsKey("path")) {
-                        cookie.setPath(String.valueOf(c.get("path")));
-                    }
-                    cookie.setHttpOnly(Boolean.TRUE.equals(c.get("httpOnly")));
-                    cookie.setSecure(Boolean.TRUE.equals(c.get("secure")));
-                    cookies.add(cookie);
-                }
-                context.addCookies(cookies);
-                log.info("[BrowserAuto] Injected {} cookies", cookies.size());
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            List<Map<String, Object>> cookieList;
+
+            if (json.startsWith("[")) {
+                cookieList = mapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+            } else {
+                // Single object → wrap in list
+                Map<String, Object> single = mapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+                cookieList = Collections.singletonList(single);
             }
+
+            List<Cookie> cookies = new ArrayList<>();
+            for (Map<String, Object> c : cookieList) {
+                String name = String.valueOf(c.get("name"));
+                String value = String.valueOf(c.get("value"));
+                if (name == null || name.isBlank() || "null".equals(name)) {
+                    continue;
+                }
+
+                Cookie cookie = new Cookie(name, value);
+
+                // 设置 domain: 优先用 JSON 中的，否则默认 .ifdian.net
+                String domain = c.containsKey("domain") && !"null".equals(String.valueOf(c.get("domain")))
+                        ? String.valueOf(c.get("domain"))
+                        : ".ifdian.net";
+                cookie.setDomain(domain);
+
+                // 设置 path: 优先用 JSON 中的，否则默认 /
+                String path = c.containsKey("path") && !"null".equals(String.valueOf(c.get("path")))
+                        ? String.valueOf(c.get("path"))
+                        : "/";
+                cookie.setPath(path);
+
+                cookie.setHttpOnly(Boolean.TRUE.equals(c.get("httpOnly")));
+                cookie.setSecure(Boolean.TRUE.equals(c.get("secure")));
+
+                // sameSite 属性（Playwright 支持）
+                if (c.containsKey("sameSite")) {
+                    try {
+                        String sameSite = String.valueOf(c.get("sameSite")).toLowerCase();
+                        if ("lax".equals(sameSite)) {
+                            cookie.setSameSite(com.microsoft.playwright.options.SameSiteAttribute.LAX);
+                        } else if ("strict".equals(sameSite)) {
+                            cookie.setSameSite(com.microsoft.playwright.options.SameSiteAttribute.STRICT);
+                        } else if ("none".equals(sameSite)) {
+                            cookie.setSameSite(com.microsoft.playwright.options.SameSiteAttribute.NONE);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                cookies.add(cookie);
+            }
+
+            if (cookies.isEmpty()) {
+                log.warn("[BrowserAuto] Parsed 0 valid cookies from JSON");
+                return 0;
+            }
+
+            context.addCookies(cookies);
+            log.info("[BrowserAuto] Injected {} cookies from JSON (domains: {})",
+                    cookies.size(),
+                    cookies.stream().map(c -> c.domain).distinct().collect(java.util.stream.Collectors.joining(", ")));
+            return cookies.size();
         } catch (Exception e) {
             log.warn("[BrowserAuto] Failed to parse cookie JSON: {}", e.getMessage());
+            return -1;
         }
     }
 
     /**
-     * 检查当前页面是否需要登录
+     * 从 document.cookie 格式注入 Cookie（name1=value1; name2=value2）
+     */
+    private int injectCookiesFromDocumentCookie(BrowserContext context, String cookieStr) {
+        try {
+            String[] pairs = cookieStr.split(";");
+            List<Cookie> cookies = new ArrayList<>();
+
+            for (String pair : pairs) {
+                pair = pair.trim();
+                if (pair.isEmpty()) continue;
+
+                int eqIdx = pair.indexOf('=');
+                if (eqIdx <= 0) continue;
+
+                String name = pair.substring(0, eqIdx).trim();
+                String value = pair.substring(eqIdx + 1).trim();
+                if (name.isEmpty()) continue;
+
+                Cookie cookie = new Cookie(name, value);
+                cookie.setDomain(".ifdian.net");
+                cookie.setPath("/");
+                cookies.add(cookie);
+            }
+
+            if (cookies.isEmpty()) {
+                log.warn("[BrowserAuto] Parsed 0 cookies from document.cookie string");
+                return 0;
+            }
+
+            context.addCookies(cookies);
+            log.info("[BrowserAuto] Injected {} cookies from document.cookie format", cookies.size());
+            return cookies.size();
+        } catch (Exception e) {
+            log.warn("[BrowserAuto] Failed to parse document.cookie string: {}", e.getMessage());
+            return -1;
+        }
+    }
+
+    /**
+     * 检查当前页面是否需要登录（Cookie 失效/未认证）
+     *
+     * <p>检测多种未登录迹象：URL 重定向到登录页、页面内容中的登录提示、
+     * Vue SPA 渲染的登录组件等。</p>
      */
     private boolean isLoginRequired(Page page) {
         String url = page.url();
+
+        // 1. URL 包含 /login — 明确的登录页重定向
+        if (url.contains("/login")) {
+            log.info("[BrowserAuto] Detected login redirect: {}", url);
+            return true;
+        }
+
+        // 2. 检查页面内容
         String content = page.content().toLowerCase();
-        return url.contains("/login") || content.contains("请登录") || content.contains("sign in");
+
+        // 中文登录提示
+        if (content.contains("请登录") || content.contains("请先登录")
+                || content.contains("未登录") || content.contains("尚未登录")
+                || content.contains("登录后查看") || content.contains("立即登录")) {
+            log.info("[BrowserAuto] Detected login prompt in page content");
+            return true;
+        }
+
+        // 英文登录提示
+        if (content.contains("sign in") || content.contains("log in")
+                || content.contains("please login") || content.contains("sign in to continue")) {
+            log.info("[BrowserAuto] Detected login prompt (English) in page content");
+            return true;
+        }
+
+        // 3. 检测 ifdian.net 的 Vue SPA 登录组件特征
+        //    (页面中包含登录表单但没有用户信息时)
+        if (content.contains("vm-login") || content.contains("login-form")
+                || content.contains("class=\"login")) {
+            // 进一步确认：没有用户相关的已登录标志
+            if (!content.contains("nav-header") || !content.contains("avatar")) {
+                log.info("[BrowserAuto] Detected login page via Vue component markers");
+                return true;
+            }
+        }
+
+        // 4. 检测 "用户不存在" 等错误（可能是 Cookie 中的 user_id 无效）
+        if (content.contains("用户不存在") || content.contains("账号不存在")
+                || content.contains("user not found")) {
+            log.info("[BrowserAuto] Detected 'user not found' error");
+            return true;
+        }
+
+        return false;
     }
 
     /**
      * 在创作中心页面定位方案创建入口
      */
     private boolean navigateToPlanCreation(Page page) {
+        // 如果已经在 plan settings 页面 (如 /setting/plan)，尝试找到创建/新建按钮
+        if (page.url().contains("/setting/plan")) {
+            String[] createSelectors = {
+                    "button:has-text('创建方案')",
+                    "a:has-text('创建方案')",
+                    "button:has-text('新建方案')",
+                    "a:has-text('新建方案')",
+                    "button:has-text('添加方案')",
+                    "a:has-text('添加方案')",
+                    "a[href*='/plan/create']",
+                    "a[href*='/plan/new']",
+                    ".create-plan-btn",
+                    "[data-action='create-plan']",
+                    "button:has-text('发布')",
+                    "a:has-text('发布方案')"
+            };
+            for (String selector : createSelectors) {
+                try {
+                    ElementHandle element = page.querySelector(selector);
+                    if (element != null && element.isVisible()) {
+                        element.click();
+                        page.waitForLoadState();
+                        log.info("[BrowserAuto] Clicked plan creation entry: {}", selector);
+                        return true;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            // 如果页面上就有创建表单 (如直接在 setting/plan 页面内嵌创建表单)，也算成功
+            if (page.querySelector("form") != null) {
+                log.info("[BrowserAuto] Already on a page with a form, treating as creation page");
+                return true;
+            }
+        }
+
         // 尝试常见的导航选择器
         String[] selectors = {
                 "a[href*='/plan/create']",
@@ -240,19 +441,21 @@ public class BrowserAutomationService {
 
         // 尝试直接导航到常见的创建页 URL
         String[] createUrls = {
-                AFDIAN_DASHBOARD + "/plan/create",
-                AFDIAN_DASHBOARD + "/plan/new",
-                AFDIAN_DASHBOARD + "/create-plan",
+                "https://ifdian.net/setting/plan",
                 "https://ifdian.net/creator/plan/create",
-                "https://ifdian.net/creator/plan/new"
+                "https://ifdian.net/creator/plan/new",
+                "https://ifdian.net/dashboard/plan/create",
+                "https://ifdian.net/dashboard/plan/new",
+                "https://ifdian.net/plan/create",
+                "https://ifdian.net/plan/new"
         };
 
         for (String url : createUrls) {
             try {
                 page.navigate(url);
                 page.waitForLoadState();
-                // 检查是否成功到达创建页 (不是 404 或重定向回首页)
-                if (!page.url().equals(AFDIAN_DASHBOARD) && !page.url().contains("/login")) {
+                // 检查是否成功到达创建页 (不是重定向回登录页)
+                if (!page.url().contains("/login")) {
                     log.info("[BrowserAuto] Navigated to: {}", url);
                     return true;
                 }

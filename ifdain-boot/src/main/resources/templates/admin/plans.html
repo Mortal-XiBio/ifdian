@@ -48,7 +48,7 @@
                         <div class="ratio ratio-16x9" style="max-height:450px;">
                             <iframe id="afdianIframe"
                                     src="about:blank"
-                                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+                                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"
                                     loading="lazy"
                                     style="border:1px solid #dee2e6; border-radius:4px;"
                                     title="爱发电创作中心">
@@ -57,6 +57,10 @@
                         <div class="text-muted small mt-1">
                             <i class="bi bi-info-circle"></i>
                             在嵌入页面中直接操作爱发电创作中心。如果页面无法加载，将自动切换到浏览器自动化模式。
+                        </div>
+                        <div class="alert alert-warning small py-1 mt-1 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <strong>注意：</strong>由于浏览器的第三方 Cookie 限制，在此嵌入页面中登录爱发电后，登录状态可能无法持久保存。切换到其他页面再返回时，可能需要重新登录。这是浏览器安全策略导致的限制，与系统无关。建议使用右侧的「浏览器自动化」模式，先在系统设置中配置好爱发电登录 Cookie 后再进行操作。
                         </div>
                     </div>
 
@@ -69,8 +73,41 @@
                         <div th:if="${!afdianCookieConfigured}" class="alert alert-warning small py-1 mb-2">
                             <i class="bi bi-exclamation-triangle"></i>
                             尚未配置爱发电登录 Cookie，请先在
-                            <a th:href="@{${basePath} + '/settings'}">系统设置</a> 中配置 <code>ifdain.afdian_cookie</code>。
+                            <a th:href="@{${basePath} + '/settings'}">系统设置</a> 中配置。
                         </div>
+                        <!-- Cookie 导出助手 -->
+                        <details class="mb-2" th:if="${!afdianCookieConfigured}">
+                            <summary class="small text-muted">如何获取 Cookie？</summary>
+                            <div class="mt-2 p-2 bg-light rounded small">
+                                <p class="mb-1 fw-bold">方法一：控制台复制（推荐）</p>
+                                <ol class="mb-2 ps-3" style="font-size:0.75rem;">
+                                    <li>在浏览器中打开 <a href="https://ifdian.net" target="_blank">ifdian.net</a> 并登录</li>
+                                    <li>按 <kbd>F12</kbd> 打开开发者工具，切换到 <strong>Console</strong> 面板</li>
+                                    <li>粘贴以下代码并回车，即可复制 Cookie：</li>
+                                </ol>
+                                <pre class="bg-dark text-light p-2 rounded mb-2" style="font-size:0.65rem; overflow-x:auto;" id="cookieHelperCode">// 复制此代码到 ifdian.net 的控制台执行
+(function(){
+  var cookies = document.cookie.split(';').map(function(c){
+    var parts = c.trim().split('=');
+    return {name: parts[0], value: parts.slice(1).join('=')};
+  }).filter(function(c){ return c.name; });
+  // 用 JSON 格式输出（推荐，包含更多信息）
+  var json = JSON.stringify(cookies, null, 2);
+  console.log('=== Cookie JSON (可直接粘贴到系统设置) ===');
+  console.log(json);
+  console.log('=== 或使用 document.cookie 格式 ===');
+  console.log(document.cookie);
+  copy(json);
+  console.log('✅ 已复制 JSON 格式到剪贴板！');
+})();</pre>
+                                <p class="mb-1 fw-bold">方法二：手动导出</p>
+                                <ol class="mb-0 ps-3" style="font-size:0.75rem;">
+                                    <li><strong>Chrome/Edge:</strong> F12 → Application → Cookies → ifdian.net → 逐个复制名称和值</li>
+                                    <li>粘贴到系统设置时使用 JSON 数组格式：<code>[{"name":"auth_token","value":"xxx"},{"name":"user_id","value":"yyy"}]</code></li>
+                                    <li>或者直接粘贴 <code>document.cookie</code> 的输出结果（name1=val1; name2=val2 格式）</li>
+                                </ol>
+                            </div>
+                        </details>
                         <div class="mb-2">
                             <label class="form-label small">方案名称 <span class="text-danger">*</span></label>
                             <input type="text" id="planTitle" class="form-control form-control-sm"
@@ -375,7 +412,7 @@
 
         // 开始加载
         setStatus('info', '正在尝试加载爱发电创作中心...');
-        iframe.src = 'https://ifdian.net/dashboard';
+        iframe.src = 'https://ifdian.net/setting/plan';
     }
 
     /** 自动切换到浏览器自动化模式 */

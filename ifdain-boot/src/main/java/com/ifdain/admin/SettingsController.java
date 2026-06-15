@@ -51,8 +51,8 @@ public class SettingsController {
 
         // 提取常用配置到单独变量方便模板展示
         model.addAttribute("userId", configService.getOrDefault(SystemConfigService.KEY_USER_ID, ""));
-        model.addAttribute("apiToken", maskToken(configService.getOrDefault(SystemConfigService.KEY_API_TOKEN, "")));
-        model.addAttribute("webhookPublicKey", maskToken(configService.getOrDefault(SystemConfigService.KEY_WEBHOOK_PUBLIC_KEY, "")));
+        model.addAttribute("apiTokenConfigured", !configService.getOrDefault(SystemConfigService.KEY_API_TOKEN, "").isEmpty());
+        model.addAttribute("webhookPublicKeyConfigured", !configService.getOrDefault(SystemConfigService.KEY_WEBHOOK_PUBLIC_KEY, "").isEmpty());
         model.addAttribute("webhookPath", configService.getOrDefault(SystemConfigService.KEY_WEBHOOK_PATH, "/webhook/ifdian"));
         model.addAttribute("adminUsername", configService.getOrDefault(SystemConfigService.KEY_ADMIN_USERNAME, "admin"));
         model.addAttribute("apiBaseUrl", configService.getOrDefault(SystemConfigService.KEY_API_BASE_URL, "https://ifdian.net"));
@@ -61,18 +61,17 @@ public class SettingsController {
         model.addAttribute("redisEnabled", "true".equals(configService.getOrDefault(SystemConfigService.KEY_REDIS_ENABLED, "false")));
         model.addAttribute("redisHost", configService.getOrDefault(SystemConfigService.KEY_REDIS_HOST, "localhost"));
         model.addAttribute("redisPort", configService.getOrDefault(SystemConfigService.KEY_REDIS_PORT, "6379"));
-        model.addAttribute("redisPassword", maskToken(configService.getOrDefault(SystemConfigService.KEY_REDIS_PASSWORD, "")));
+        model.addAttribute("redisPassword", configService.getOrDefault(SystemConfigService.KEY_REDIS_PASSWORD, ""));
         model.addAttribute("redisDatabase", configService.getOrDefault(SystemConfigService.KEY_REDIS_DATABASE, "0"));
 
         // 外部 API 配置
-        model.addAttribute("externalApiKey", maskToken(configService.getOrDefault(SystemConfigService.KEY_EXTERNAL_API_KEY, "")));
+        model.addAttribute("externalApiKeyConfigured", !configService.getOrDefault(SystemConfigService.KEY_EXTERNAL_API_KEY, "").isEmpty());
         model.addAttribute("callbackMaxRetries", configService.getOrDefault(SystemConfigService.KEY_CALLBACK_MAX_RETRIES, "3"));
         model.addAttribute("callbackTimeoutMs", configService.getOrDefault(SystemConfigService.KEY_CALLBACK_TIMEOUT_MS, "10000"));
 
         // 浏览器自动化 — 爱发电 Cookie
         String cookieVal = configService.getOrDefault(BrowserAutomationService.KEY_AFDIAN_COOKIE, "");
         model.addAttribute("afdianCookieConfigured", !cookieVal.isBlank());
-        model.addAttribute("afdianCookie", maskToken(cookieVal));
 
         // 数据库状态
         model.addAttribute("dbMode", databaseInitializer.getDbMode());
@@ -112,7 +111,7 @@ public class SettingsController {
         if (apiToken != null && !apiToken.isEmpty()) {
             configService.set(SystemConfigService.KEY_API_TOKEN, apiToken, "爱发电 API Token");
         }
-        if (webhookPublicKey != null) {
+        if (webhookPublicKey != null && !webhookPublicKey.isBlank()) {
             configService.set(SystemConfigService.KEY_WEBHOOK_PUBLIC_KEY, webhookPublicKey, "Webhook RSA 公钥");
         }
         if (webhookPath != null) {
@@ -150,7 +149,7 @@ public class SettingsController {
         }
 
         // 外部 API 配置
-        if (externalApiKey != null) {
+        if (externalApiKey != null && !externalApiKey.isEmpty()) {
             configService.set(SystemConfigService.KEY_EXTERNAL_API_KEY, externalApiKey, "外部 API 访问密钥");
         }
         if (callbackMaxRetries != null) {
@@ -168,15 +167,5 @@ public class SettingsController {
 
         attr.addFlashAttribute("success", "设置已保存");
         return "redirect:" + adminProperties.getBasePath() + "/settings";
-    }
-
-    /**
-     * 对敏感 Token 做掩码处理（仅显示前后几位）
-     */
-    private String maskToken(String token) {
-        if (token == null || token.length() < 8) {
-            return token;
-        }
-        return token.substring(0, 4) + "****" + token.substring(token.length() - 4);
     }
 }
