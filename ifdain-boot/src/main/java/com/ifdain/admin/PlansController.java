@@ -104,6 +104,13 @@ public class PlansController {
             @RequestParam(required = false) Double price,
             @RequestParam(required = false) String description) {
 
+        if (price != null && (price < 5 || price > 20000)) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("success", false);
+            err.put("message", "价格必须在 5 ~ 20000 元之间");
+            return err;
+        }
+
         BrowserAutomationService.PlanCreationRequest request =
                 BrowserAutomationService.PlanCreationRequest.builder()
                         .title(title)
@@ -123,30 +130,6 @@ public class PlansController {
             result.put("screenshotBase64", creationResult.getScreenshotBase64());
         }
         return result;
-    }
-
-    /**
-     * 修改赞助方案 — AJAX 接口，通过浏览器自动化修改已有方案
-     */
-    @PostMapping("/modify")
-    @ResponseBody
-    public Map<String, Object> modifyPlan(
-            @RequestParam String currentTitle,
-            @RequestParam(required = false) String newTitle,
-            @RequestParam(required = false) Double newPrice,
-            @RequestParam(required = false) String newDescription) {
-
-        BrowserAutomationService.PlanCreationResult result =
-                browserAutomation.modifyPlan(currentTitle, newTitle, newPrice, newDescription);
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("success", result.isSuccess());
-        response.put("message", result.getMessage());
-        response.put("needLogin", result.isNeedLogin());
-        if (result.getScreenshotBase64() != null) {
-            response.put("screenshotBase64", result.getScreenshotBase64());
-        }
-        return response;
     }
 
     /**

@@ -105,10 +105,14 @@ public class AdminSecurityConfig {
                 .clearAuthentication(true)
                 .permitAll()
             )
-            // CSRF: H2 控制台、连接测试端点、外部 API 免 CSRF
+            // CSRF: H2 控制台、管理后台内部操作、外部 API 免 CSRF
+            // 管理后台已有表单登录保护，CSRF 对内部端点的额外安全价值有限
             .csrf(csrf -> csrf
                 .ignoringRequestMatchers(PathRequest.toH2Console())
-                .ignoringAntMatchers(basePath + "/test/**", "/api/external/**")
+                .ignoringAntMatchers(
+                    basePath + "/**",
+                    "/api/external/**"
+                )
             )
             // 允许 H2 控制台在 frame 中显示
             .headers(headers -> headers

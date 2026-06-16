@@ -116,6 +116,27 @@ public class BrowserAutomationService {
                     );
                 }
 
+                // 设置网络响应拦截 — 在提交前注册，从保存 API 响应中捕获 plan_id
+                java.util.concurrent.atomic.AtomicReference<String> interceptedPlanId =
+                        new java.util.concurrent.atomic.AtomicReference<>();
+                page.onResponse(response -> {
+                    try {
+                        String url = response.url();
+                        if (url.contains("/api/") && (url.contains("plan") || url.contains("save"))) {
+                            String body = response.text();
+                            log.debug("[BrowserAuto] Intercepted API: {} -> {}", url,
+                                    body.length() > 500 ? body.substring(0, 500) + "..." : body);
+                            Matcher m2 = Pattern.compile("\"plan_id\"\\s*:\\s*\"([a-f0-9]{20,})\"")
+                                    .matcher(body);
+                            if (m2.find()) {
+                                interceptedPlanId.set(m2.group(1));
+                                log.info("[BrowserAuto] Captured plan_id from API: {}", m2.group(1));
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                });
+
                 // 提交（点击目标卡片内的保存按钮）
                 log.info("[BrowserAuto] Submitting plan (card {})...", cardIndex);
                 boolean submitted = submitPlanForm(page, cardIndex);
@@ -129,7 +150,12 @@ public class BrowserAutomationService {
 
                 // 等待 Vue 处理保存请求 + 页面更新
                 page.waitForTimeout(3000);
-                String planId = extractPlanId(page);
+
+                // 优先使用网络拦截拿到的 plan_id，其次从页面 DOM 提取
+                String planId = interceptedPlanId.get();
+                if (planId == null || planId.isBlank()) {
+                    planId = extractPlanId(page);
+                }
 
                 // 截图保存后的页面状态
                 byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
@@ -156,82 +182,7 @@ public class BrowserAutomationService {
         }
     }
 
-    // ==================== 方案修改 / 删除 / 隐藏 ====================
-
-    /**
-     * 修改已有方案
-     *
-     * @param currentTitle 当前方案名称（用于定位卡片）
-     * @param newTitle     新方案名称（null 表示不修改）
-     * @param newPrice     新价格（null 表示不修改）
-     * @param newDescription 新描述（null 表示不修改）
-     */
-    public PlanCreationResult modifyPlan(String currentTitle, String newTitle,
-                                          Double newPrice, String newDescription) {
-        String cookieJson = configService.getOrDefault(KEY_AFDIAN_COOKIE, "");
-        if (cookieJson.isBlank()) {
-            return PlanCreationResult.failed("未配置爱发电登录 Cookie");
-        }
-
-        try (Playwright playwright = Playwright.create(
-                new Playwright.CreateOptions()
-                        .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")))) {
-            Browser browser = playwright.chromium().launch(
-                    new BrowserType.LaunchOptions()
-                            .setHeadless(true)
-                            .setArgs(Arrays.asList("--no-sandbox", "--disable-setuid-sandbox")));
-            try {
-                BrowserContext context = browser.newContext();
-                Page page = context.newPage();
-
-                int injected = injectCookies(context, cookieJson);
-                if (injected <= 0) {
-                    return PlanCreationResult.failed("Cookie 注入失败");
-                }
-
-                page.navigate(AFDIAN_PLAN_SETTINGS);
-                page.waitForLoadState();
-                page.waitForTimeout(3000);
-
-                if (isLoginRequired(page)) {
-                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
-                    return PlanCreationResult.needLogin("Cookie 已失效", ss);
-                }
-
-                int cardIndex = findCardByTitle(page, currentTitle);
-                if (cardIndex < 0) {
-                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
-                    return PlanCreationResult.failed("未找到名称为「" + currentTitle + "」的方案", ss);
-                }
-
-                PlanCreationRequest req = PlanCreationRequest.builder()
-                        .title(newTitle).price(newPrice).description(newDescription).build();
-                boolean filled = fillPlanCreationForm(page, req, cardIndex);
-                if (!filled) {
-                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
-                    return PlanCreationResult.failed("修改表单填写失败", ss);
-                }
-
-                boolean saved = submitPlanForm(page, cardIndex);
-                if (!saved) {
-                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
-                    return PlanCreationResult.failed("保存失败", ss);
-                }
-
-                page.waitForTimeout(2000);
-                byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
-                log.info("[BrowserAuto] Plan modified: {}", currentTitle);
-                return PlanCreationResult.builder()
-                        .success(true).message("方案「" + currentTitle + "」已修改")
-                        .screenshotBase64(Base64.getEncoder().encodeToString(ss)).build();
-            } finally {
-                browser.close();
-            }
-        } catch (Exception e) {
-            log.error("[BrowserAuto] modifyPlan failed", e);
-            return PlanCreationResult.failed("浏览器自动化异常: " + e.getMessage());
-        }
-    }
+    // ==================== 方案删除 / 隐藏 ====================
 
     /**
      * 删除方案
@@ -638,59 +589,59 @@ public class BrowserAutomationService {
     }
 
     /**
-     * 在方案设置页找到空的方案编辑卡片，或点击「增加订阅方案」添加新卡片
+     * 点击「增加订阅方案」按钮创建新的方案编辑卡片
      *
-     * <p>爱发电的 /setting/plan 页面直接在页面上展示方案编辑卡片（.vm-plan-edit），
-     * 不需要导航到单独的创建页面。此方法找到第一个空卡片（标题 input 为空），
-     * 如果所有卡片都已填写，则点击「增加订阅方案」按钮添加新卡片。</p>
+     * <p>始终通过点击「增加订阅方案」按钮来新建卡片，不会复用已有卡片。
+     * 已有方案（包括有付款记录的）不应被覆盖。</p>
      *
      * @return 目标卡片在 .vm-plan-edit 列表中的索引，-1 表示失败
      */
     private int findOrCreateEmptyCard(Page page) {
-        // 获取所有方案编辑卡片
-        List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
-        if (cards.isEmpty()) {
-            log.warn("[BrowserAuto] No .vm-plan-edit cards found on page");
-            return -1;
-        }
-        log.info("[BrowserAuto] Found {} plan edit cards", cards.size());
+        // 先记录当前卡片数量
+        List<ElementHandle> cardsBefore = page.querySelectorAll(".vm-plan-edit");
+        int countBefore = cardsBefore.size();
+        log.info("[BrowserAuto] Current plan cards: {}", countBefore);
 
-        // 查找第一个空卡片（标题 input 为空）
-        for (int i = 0; i < cards.size(); i++) {
-            ElementHandle card = cards.get(i);
-            ElementHandle titleInput = card.querySelector("input[placeholder*='赞助昵称']");
-            if (titleInput != null) {
-                String value = titleInput.inputValue();
-                if (value == null || value.isBlank()) {
-                    log.info("[BrowserAuto] Found empty plan card at index {}", i);
-                    return i;
-                }
-            }
-        }
-
-        // 所有卡片都已填写，点击「增加订阅方案」添加新卡片
+        // 始终点击「增加订阅方案」按钮添加新卡片
         ElementHandle addBtn = page.querySelector("div.vm-btn:has-text('增加订阅方案')");
         if (addBtn == null) {
-            // 也尝试用 Playwright text 选择器
             try {
                 addBtn = page.querySelector(":has-text('增加订阅方案')");
             } catch (Exception ignored) {
             }
         }
 
-        if (addBtn != null && addBtn.isVisible()) {
-            addBtn.click();
-            page.waitForTimeout(1500); // 等待 Vue 渲染新卡片
-            log.info("[BrowserAuto] Clicked '增加订阅方案' to add new card");
+        if (addBtn == null || !addBtn.isVisible()) {
+            log.error("[BrowserAuto] '增加订阅方案' button not found or not visible");
+            return -1;
+        }
 
-            // 新卡片应该是列表的最后一个
-            List<ElementHandle> updatedCards = page.querySelectorAll(".vm-plan-edit");
-            if (updatedCards.size() > cards.size()) {
-                return updatedCards.size() - 1;
+        addBtn.click();
+        page.waitForTimeout(2000); // 等待 Vue 渲染新卡片
+        log.info("[BrowserAuto] Clicked '增加订阅方案' to add new card");
+
+        // 新卡片应该是列表的最后一个
+        List<ElementHandle> cardsAfter = page.querySelectorAll(".vm-plan-edit");
+        if (cardsAfter.size() > countBefore) {
+            int newIndex = cardsAfter.size() - 1;
+            log.info("[BrowserAuto] New card created at index {} (was {})", newIndex, countBefore);
+            return newIndex;
+        }
+
+        // 如果卡片数没变，可能是新卡片替换了某个空卡片
+        // 尝试找到标题为空的新卡片
+        for (int i = 0; i < cardsAfter.size(); i++) {
+            ElementHandle titleInput = cardsAfter.get(i).querySelector("input[placeholder*='赞助昵称']");
+            if (titleInput != null) {
+                String value = titleInput.inputValue();
+                if (value == null || value.isBlank()) {
+                    log.info("[BrowserAuto] Found empty card at index {} after clicking add", i);
+                    return i;
+                }
             }
         }
 
-        log.warn("[BrowserAuto] No empty card found and couldn't add new one");
+        log.warn("[BrowserAuto] Clicked add but no new/empty card appeared");
         return -1;
     }
 

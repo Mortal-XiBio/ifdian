@@ -116,7 +116,7 @@
                         <div class="mb-2">
                             <label class="form-label small">月付价格 (元)</label>
                             <input type="number" id="planPrice" class="form-control form-control-sm"
-                                   placeholder="例如: 5.00" min="0" step="0.01">
+                                   placeholder="5 ~ 20000" min="5" max="20000" step="0.01">
                         </div>
                         <div class="mb-2">
                             <label class="form-label small">方案描述</label>
@@ -142,42 +142,21 @@
                 </div>
             </div>
 
-            <!-- 管理已有方案 — 修改 / 删除 / 隐藏 -->
+            <!-- 管理已有方案 — 删除 / 隐藏 -->
             <div class="card mb-3 border-warning">
                 <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0"><i class="bi bi-pencil-square me-1"></i>管理已有方案</h6>
+                    <h6 class="mb-0"><i class="bi bi-gear me-1"></i>管理已有方案</h6>
                 </div>
                 <div class="card-body p-2">
                     <p class="text-muted small mb-2">
-                        通过浏览器自动化在爱发电官网修改、删除或隐藏已有方案。需要先在系统设置中配置爱发电登录 Cookie。
+                        通过浏览器自动化在爱发电官网删除或隐藏已有方案。需要先在系统设置中配置爱发电登录 Cookie。
                     </p>
                     <div class="mb-2">
                         <label class="form-label small">方案名称（定位目标方案）<span class="text-danger">*</span></label>
                         <input type="text" id="manageTargetTitle" class="form-control form-control-sm"
                                placeholder="输入要操作的方案名称，例如：每月奶茶赞助">
                     </div>
-                    <hr class="my-2">
-                    <p class="text-muted small mb-1 fw-bold">修改方案</p>
-                    <div class="row g-2 mb-2">
-                        <div class="col-4">
-                            <input type="text" id="manageNewTitle" class="form-control form-control-sm"
-                                   placeholder="新名称（留空不改）">
-                        </div>
-                        <div class="col-4">
-                            <input type="number" id="manageNewPrice" class="form-control form-control-sm"
-                                   placeholder="新价格" min="0" step="0.01">
-                        </div>
-                        <div class="col-4">
-                            <input type="text" id="manageNewDesc" class="form-control form-control-sm"
-                                   placeholder="新描述（留空不改）">
-                        </div>
-                    </div>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <button type="button" class="btn btn-warning btn-sm"
-                                th:disabled="${!browserAutomationAvailable || !afdianCookieConfigured}"
-                                onclick="managePlan('modify')">
-                            <i class="bi bi-pencil"></i> 修改
-                        </button>
+                    <div class="d-flex gap-2 flex-wrap mt-2">
                         <button type="button" class="btn btn-outline-danger btn-sm"
                                 th:disabled="${!browserAutomationAvailable || !afdianCookieConfigured}"
                                 onclick="managePlan('delete')">
@@ -495,6 +474,13 @@
             return;
         }
         var price = document.getElementById('planPrice').value.trim();
+        if (price) {
+            var priceNum = parseFloat(price);
+            if (isNaN(priceNum) || priceNum < 5 || priceNum > 20000) {
+                alert('价格必须在 5 ~ 20000 元之间');
+                return;
+            }
+        }
         var desc = document.getElementById('planDesc').value.trim();
 
         var loadingEl = document.getElementById('createLoading');
@@ -536,8 +522,8 @@
                     html += '<div class="text-muted small mb-2">请在浏览器中登录爱发电后导出 Cookie，然后粘贴到系统设置的 <code>ifdain.afdian_cookie</code> 配置项中。</div>';
                 }
                 if (data.screenshotBase64) {
-                    html += '<details><summary class="small text-muted">故障截图</summary>';
-                    html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1" style="max-height:300px;" alt="截图">';
+                    html += '<details><summary class="small text-muted">故障截图 <i class="bi bi-zoom-in"></i></summary>';
+                    html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1 screenshot-thumb" style="max-height:300px; cursor:pointer;" alt="截图" onclick="showScreenshot(this.src)">';
                     html += '</details>';
                 }
             }
@@ -568,19 +554,6 @@
 
         var formData = new URLSearchParams();
         formData.append('title', targetTitle);
-
-        if (action === 'modify') {
-            var newTitle = document.getElementById('manageNewTitle').value.trim();
-            var newPrice = document.getElementById('manageNewPrice').value.trim();
-            var newDesc = document.getElementById('manageNewDesc').value.trim();
-            if (!newTitle && !newPrice && !newDesc) {
-                alert('请至少填写一项要修改的内容');
-                return;
-            }
-            if (newTitle) formData.append('newTitle', newTitle);
-            if (newPrice) formData.append('newPrice', newPrice);
-            if (newDesc) formData.append('newDescription', newDesc);
-        }
 
         var loadingEl = document.getElementById('manageLoading');
         var resultEl = document.getElementById('manageResult');
@@ -613,8 +586,8 @@
                 }
             }
             if (data.screenshotBase64) {
-                html += '<details><summary class="small text-muted">故障截图</summary>';
-                html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1" style="max-height:300px;" alt="截图">';
+                html += '<details><summary class="small text-muted">故障截图 <i class="bi bi-zoom-in"></i></summary>';
+                html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1 screenshot-thumb" style="max-height:300px; cursor:pointer;" alt="截图" onclick="showScreenshot(this.src)">';
                 html += '</details>';
             }
             resultEl.innerHTML = html;
@@ -729,6 +702,83 @@
             document.getElementById('resultPanel').innerHTML = '<div class="alert alert-danger small py-1">请求失败: ' + err.message + '</div>';
         });
     }
+    // ===== 截图放大查看（支持缩放/拖拽） =====
+
+    var lbScale = 1, lbX = 0, lbY = 0, lbDragging = false, lbStartX = 0, lbStartY = 0, lbOrigX = 0, lbOrigY = 0;
+
+    function showScreenshot(src) {
+        lbScale = 1; lbX = 0; lbY = 0;
+        var img = document.getElementById('lightboxImg');
+        img.src = src;
+        updateLightboxTransform();
+        document.getElementById('lightboxOverlay').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeScreenshot() {
+        document.getElementById('lightboxOverlay').style.display = 'none';
+        document.getElementById('lightboxImg').src = '';
+        document.body.style.overflow = '';
+    }
+
+    function updateLightboxTransform() {
+        document.getElementById('lightboxImg').style.transform =
+            'translate(' + lbX + 'px,' + lbY + 'px) scale(' + lbScale + ')';
+    }
+
+    // 滚轮缩放
+    document.addEventListener('wheel', function(e) {
+        var overlay = document.getElementById('lightboxOverlay');
+        if (overlay.style.display !== 'flex') return;
+        e.preventDefault();
+        var delta = e.deltaY > 0 ? -0.15 : 0.15;
+        lbScale = Math.max(0.3, Math.min(8, lbScale + delta));
+        updateLightboxTransform();
+    }, { passive: false });
+
+    // 拖拽平移
+    document.getElementById('lightboxImg').addEventListener('mousedown', function(e) {
+        if (lbScale <= 1) return; // 未放大时不需要拖拽
+        lbDragging = true;
+        lbStartX = e.clientX; lbStartY = e.clientY;
+        lbOrigX = lbX; lbOrigY = lbY;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!lbDragging) return;
+        lbX = lbOrigX + (e.clientX - lbStartX);
+        lbY = lbOrigY + (e.clientY - lbStartY);
+        updateLightboxTransform();
+    });
+    document.addEventListener('mouseup', function() { lbDragging = false; });
+
+    // 双击重置缩放
+    document.getElementById('lightboxImg').addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        if (lbScale !== 1) { lbScale = 1; lbX = 0; lbY = 0; }
+        else { lbScale = 2.5; }
+        updateLightboxTransform();
+    });
+
+    // ESC 关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeScreenshot();
+    });
 </script>
+
+<!-- 截图放大查看遮罩 -->
+<div id="lightboxOverlay" onclick="closeScreenshot()"
+     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;
+            background:rgba(0,0,0,0.85); justify-content:center; align-items:center; cursor:zoom-out;
+            overflow:hidden;">
+    <img id="lightboxImg" src="" alt="截图放大"
+         style="max-width:92vw; max-height:92vh; border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.5);
+                cursor:grab; transition:transform 0.1s ease-out; transform-origin:center center;"
+         onclick="event.stopPropagation()">
+    <div style="position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+                color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none;">
+        滚轮缩放 · 拖拽平移 · 双击放大/还原 · ESC 关闭
+    </div>
+</div>
 </body>
 </html>
