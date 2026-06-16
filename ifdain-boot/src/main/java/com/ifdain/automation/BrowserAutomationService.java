@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -95,20 +94,20 @@ public class BrowserAutomationService {
                     );
                 }
 
-                // 导航到方案创建页面
-                log.info("[BrowserAuto] Navigating to plan creation page...");
-                boolean navigated = navigateToPlanCreation(page);
-                if (!navigated) {
+                // 在方案设置页定位空卡片或添加新卡片
+                log.info("[BrowserAuto] Looking for empty plan card...");
+                int cardIndex = findOrCreateEmptyCard(page);
+                if (cardIndex < 0) {
                     byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
                     return PlanCreationResult.failed(
-                            "无法定位方案创建入口，爱发电页面结构可能已变化",
+                            "无法找到空的方案编辑卡片，爱发电页面结构可能已变化",
                             screenshot
                     );
                 }
 
-                // 填写创建表单
-                log.info("[BrowserAuto] Filling plan creation form: {}", request.getTitle());
-                boolean filled = fillPlanCreationForm(page, request);
+                // 填写方案创建表单（在目标卡片内）
+                log.info("[BrowserAuto] Filling plan creation form (card {}): {}", cardIndex, request.getTitle());
+                boolean filled = fillPlanCreationForm(page, request, cardIndex);
                 if (!filled) {
                     byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
                     return PlanCreationResult.failed(
@@ -117,9 +116,9 @@ public class BrowserAutomationService {
                     );
                 }
 
-                // 提交
-                log.info("[BrowserAuto] Submitting plan...");
-                boolean submitted = submitPlanForm(page);
+                // 提交（点击目标卡片内的保存按钮）
+                log.info("[BrowserAuto] Submitting plan (card {})...", cardIndex);
+                boolean submitted = submitPlanForm(page, cardIndex);
                 if (!submitted) {
                     byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
                     return PlanCreationResult.failed(
@@ -128,17 +127,21 @@ public class BrowserAutomationService {
                     );
                 }
 
-                // 等待跳转并提取 plan_id
+                // 等待 Vue 处理保存请求 + 页面更新
                 page.waitForTimeout(3000);
                 String planId = extractPlanId(page);
 
+                // 截图保存后的页面状态
+                byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+
                 if (planId != null && !planId.isBlank()) {
                     log.info("[BrowserAuto] Plan created successfully, plan_id={}", planId);
-                    return PlanCreationResult.success(planId, "方案创建成功");
+                    return PlanCreationResult.builder()
+                            .success(true).planId(planId).message("方案创建成功")
+                            .screenshotBase64(Base64.getEncoder().encodeToString(screenshot))
+                            .build();
                 }
 
-                // 尝试从页面中查找
-                byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
                 return PlanCreationResult.failed(
                         "方案可能已创建，但无法自动提取 plan_id。请查看截图确认",
                         screenshot
@@ -151,6 +154,265 @@ public class BrowserAutomationService {
             log.error("[BrowserAuto] Plan creation failed", e);
             return PlanCreationResult.failed("浏览器自动化异常: " + e.getMessage());
         }
+    }
+
+    // ==================== 方案修改 / 删除 / 隐藏 ====================
+
+    /**
+     * 修改已有方案
+     *
+     * @param currentTitle 当前方案名称（用于定位卡片）
+     * @param newTitle     新方案名称（null 表示不修改）
+     * @param newPrice     新价格（null 表示不修改）
+     * @param newDescription 新描述（null 表示不修改）
+     */
+    public PlanCreationResult modifyPlan(String currentTitle, String newTitle,
+                                          Double newPrice, String newDescription) {
+        String cookieJson = configService.getOrDefault(KEY_AFDIAN_COOKIE, "");
+        if (cookieJson.isBlank()) {
+            return PlanCreationResult.failed("未配置爱发电登录 Cookie");
+        }
+
+        try (Playwright playwright = Playwright.create(
+                new Playwright.CreateOptions()
+                        .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")))) {
+            Browser browser = playwright.chromium().launch(
+                    new BrowserType.LaunchOptions()
+                            .setHeadless(true)
+                            .setArgs(Arrays.asList("--no-sandbox", "--disable-setuid-sandbox")));
+            try {
+                BrowserContext context = browser.newContext();
+                Page page = context.newPage();
+
+                int injected = injectCookies(context, cookieJson);
+                if (injected <= 0) {
+                    return PlanCreationResult.failed("Cookie 注入失败");
+                }
+
+                page.navigate(AFDIAN_PLAN_SETTINGS);
+                page.waitForLoadState();
+                page.waitForTimeout(3000);
+
+                if (isLoginRequired(page)) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.needLogin("Cookie 已失效", ss);
+                }
+
+                int cardIndex = findCardByTitle(page, currentTitle);
+                if (cardIndex < 0) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("未找到名称为「" + currentTitle + "」的方案", ss);
+                }
+
+                PlanCreationRequest req = PlanCreationRequest.builder()
+                        .title(newTitle).price(newPrice).description(newDescription).build();
+                boolean filled = fillPlanCreationForm(page, req, cardIndex);
+                if (!filled) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("修改表单填写失败", ss);
+                }
+
+                boolean saved = submitPlanForm(page, cardIndex);
+                if (!saved) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("保存失败", ss);
+                }
+
+                page.waitForTimeout(2000);
+                byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                log.info("[BrowserAuto] Plan modified: {}", currentTitle);
+                return PlanCreationResult.builder()
+                        .success(true).message("方案「" + currentTitle + "」已修改")
+                        .screenshotBase64(Base64.getEncoder().encodeToString(ss)).build();
+            } finally {
+                browser.close();
+            }
+        } catch (Exception e) {
+            log.error("[BrowserAuto] modifyPlan failed", e);
+            return PlanCreationResult.failed("浏览器自动化异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 删除方案
+     *
+     * @param title 方案名称（用于定位卡片）
+     */
+    public PlanCreationResult deletePlan(String title) {
+        String cookieJson = configService.getOrDefault(KEY_AFDIAN_COOKIE, "");
+        if (cookieJson.isBlank()) {
+            return PlanCreationResult.failed("未配置爱发电登录 Cookie");
+        }
+
+        try (Playwright playwright = Playwright.create(
+                new Playwright.CreateOptions()
+                        .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")))) {
+            Browser browser = playwright.chromium().launch(
+                    new BrowserType.LaunchOptions()
+                            .setHeadless(true)
+                            .setArgs(Arrays.asList("--no-sandbox", "--disable-setuid-sandbox")));
+            try {
+                BrowserContext context = browser.newContext();
+                Page page = context.newPage();
+
+                int injected = injectCookies(context, cookieJson);
+                if (injected <= 0) {
+                    return PlanCreationResult.failed("Cookie 注入失败");
+                }
+
+                page.navigate(AFDIAN_PLAN_SETTINGS);
+                page.waitForLoadState();
+                page.waitForTimeout(3000);
+
+                if (isLoginRequired(page)) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.needLogin("Cookie 已失效", ss);
+                }
+
+                int cardIndex = findCardByTitle(page, title);
+                if (cardIndex < 0) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("未找到名称为「" + title + "」的方案", ss);
+                }
+
+                // 点击卡片内的删除按钮（X 图标）
+                List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
+                ElementHandle card = cards.get(cardIndex);
+                ElementHandle delBtn = card.querySelector("i.afd.afd-x.del-x-1");
+                if (delBtn == null) {
+                    delBtn = card.querySelector("i.afd-x");
+                }
+                if (delBtn == null || !delBtn.isVisible()) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("未找到删除按钮", ss);
+                }
+
+                delBtn.click();
+                page.waitForTimeout(1000);
+
+                // 爱发电可能会弹出确认对话框，尝试点击确认
+                try {
+                    ElementHandle confirmBtn = page.querySelector("div.vm-btn:has-text('确定')");
+                    if (confirmBtn == null) {
+                        confirmBtn = page.querySelector("button:has-text('确定')");
+                    }
+                    if (confirmBtn == null) {
+                        confirmBtn = page.querySelector("div.vm-btn:has-text('确认')");
+                    }
+                    if (confirmBtn != null && confirmBtn.isVisible()) {
+                        confirmBtn.click();
+                        page.waitForTimeout(1000);
+                    }
+                } catch (Exception ignored) {
+                }
+
+                page.waitForTimeout(1500);
+                byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                log.info("[BrowserAuto] Plan deleted: {}", title);
+                return PlanCreationResult.builder()
+                        .success(true).message("方案「" + title + "」已删除")
+                        .screenshotBase64(Base64.getEncoder().encodeToString(ss)).build();
+            } finally {
+                browser.close();
+            }
+        } catch (Exception e) {
+            log.error("[BrowserAuto] deletePlan failed", e);
+            return PlanCreationResult.failed("浏览器自动化异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 切换方案的隐藏/显示状态
+     *
+     * @param title 方案名称（用于定位卡片）
+     */
+    public PlanCreationResult toggleHidePlan(String title) {
+        String cookieJson = configService.getOrDefault(KEY_AFDIAN_COOKIE, "");
+        if (cookieJson.isBlank()) {
+            return PlanCreationResult.failed("未配置爱发电登录 Cookie");
+        }
+
+        try (Playwright playwright = Playwright.create(
+                new Playwright.CreateOptions()
+                        .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")))) {
+            Browser browser = playwright.chromium().launch(
+                    new BrowserType.LaunchOptions()
+                            .setHeadless(true)
+                            .setArgs(Arrays.asList("--no-sandbox", "--disable-setuid-sandbox")));
+            try {
+                BrowserContext context = browser.newContext();
+                Page page = context.newPage();
+
+                int injected = injectCookies(context, cookieJson);
+                if (injected <= 0) {
+                    return PlanCreationResult.failed("Cookie 注入失败");
+                }
+
+                page.navigate(AFDIAN_PLAN_SETTINGS);
+                page.waitForLoadState();
+                page.waitForTimeout(3000);
+
+                if (isLoginRequired(page)) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.needLogin("Cookie 已失效", ss);
+                }
+
+                int cardIndex = findCardByTitle(page, title);
+                if (cardIndex < 0) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("未找到名称为「" + title + "」的方案", ss);
+                }
+
+                // 点击卡片内的隐藏/显示切换按钮
+                List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
+                ElementHandle card = cards.get(cardIndex);
+                ElementHandle toggleBtn = card.querySelector("div.afd-eye-off-box");
+                if (toggleBtn == null) {
+                    toggleBtn = card.querySelector(".afd-eye-off-box");
+                }
+                if (toggleBtn == null || !toggleBtn.isVisible()) {
+                    byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                    return PlanCreationResult.failed("未找到隐藏/显示切换按钮", ss);
+                }
+
+                toggleBtn.click();
+                page.waitForTimeout(1500);
+
+                byte[] ss = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+                log.info("[BrowserAuto] Plan hide toggled: {}", title);
+                return PlanCreationResult.builder()
+                        .success(true).message("方案「" + title + "」隐藏状态已切换")
+                        .screenshotBase64(Base64.getEncoder().encodeToString(ss)).build();
+            } finally {
+                browser.close();
+            }
+        } catch (Exception e) {
+            log.error("[BrowserAuto] toggleHidePlan failed", e);
+            return PlanCreationResult.failed("浏览器自动化异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 根据方案名称定位卡片，返回卡片索引
+     */
+    private int findCardByTitle(Page page, String title) {
+        if (title == null || title.isBlank()) {
+            return -1;
+        }
+        List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
+        for (int i = 0; i < cards.size(); i++) {
+            ElementHandle card = cards.get(i);
+            ElementHandle titleInput = card.querySelector("input[placeholder*='赞助昵称']");
+            if (titleInput != null) {
+                String value = titleInput.inputValue();
+                if (title.equals(value)) {
+                    log.info("[BrowserAuto] Found card '{}' at index {}", title, i);
+                    return i;
+                }
+            }
+        }
+        log.warn("[BrowserAuto] Card not found for title: {}", title);
+        return -1;
     }
 
     /**
@@ -376,137 +638,116 @@ public class BrowserAutomationService {
     }
 
     /**
-     * 在创作中心页面定位方案创建入口
+     * 在方案设置页找到空的方案编辑卡片，或点击「增加订阅方案」添加新卡片
+     *
+     * <p>爱发电的 /setting/plan 页面直接在页面上展示方案编辑卡片（.vm-plan-edit），
+     * 不需要导航到单独的创建页面。此方法找到第一个空卡片（标题 input 为空），
+     * 如果所有卡片都已填写，则点击「增加订阅方案」按钮添加新卡片。</p>
+     *
+     * @return 目标卡片在 .vm-plan-edit 列表中的索引，-1 表示失败
      */
-    private boolean navigateToPlanCreation(Page page) {
-        // 如果已经在 plan settings 页面 (如 /setting/plan)，尝试找到创建/新建按钮
-        if (page.url().contains("/setting/plan")) {
-            String[] createSelectors = {
-                    "button:has-text('创建方案')",
-                    "a:has-text('创建方案')",
-                    "button:has-text('新建方案')",
-                    "a:has-text('新建方案')",
-                    "button:has-text('添加方案')",
-                    "a:has-text('添加方案')",
-                    "a[href*='/plan/create']",
-                    "a[href*='/plan/new']",
-                    ".create-plan-btn",
-                    "[data-action='create-plan']",
-                    "button:has-text('发布')",
-                    "a:has-text('发布方案')"
-            };
-            for (String selector : createSelectors) {
-                try {
-                    ElementHandle element = page.querySelector(selector);
-                    if (element != null && element.isVisible()) {
-                        element.click();
-                        page.waitForLoadState();
-                        log.info("[BrowserAuto] Clicked plan creation entry: {}", selector);
-                        return true;
-                    }
-                } catch (Exception ignored) {
+    private int findOrCreateEmptyCard(Page page) {
+        // 获取所有方案编辑卡片
+        List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
+        if (cards.isEmpty()) {
+            log.warn("[BrowserAuto] No .vm-plan-edit cards found on page");
+            return -1;
+        }
+        log.info("[BrowserAuto] Found {} plan edit cards", cards.size());
+
+        // 查找第一个空卡片（标题 input 为空）
+        for (int i = 0; i < cards.size(); i++) {
+            ElementHandle card = cards.get(i);
+            ElementHandle titleInput = card.querySelector("input[placeholder*='赞助昵称']");
+            if (titleInput != null) {
+                String value = titleInput.inputValue();
+                if (value == null || value.isBlank()) {
+                    log.info("[BrowserAuto] Found empty plan card at index {}", i);
+                    return i;
                 }
-            }
-            // 如果页面上就有创建表单 (如直接在 setting/plan 页面内嵌创建表单)，也算成功
-            if (page.querySelector("form") != null) {
-                log.info("[BrowserAuto] Already on a page with a form, treating as creation page");
-                return true;
             }
         }
 
-        // 尝试常见的导航选择器
-        String[] selectors = {
-                "a[href*='/plan/create']",
-                "a[href*='/plan/new']",
-                "a[href*='create-plan']",
-                "button:has-text('创建方案')",
-                "a:has-text('新建方案')",
-                "a:has-text('添加方案')",
-                ".create-plan-btn",
-                "[data-action='create-plan']"
-        };
-
-        for (String selector : selectors) {
+        // 所有卡片都已填写，点击「增加订阅方案」添加新卡片
+        ElementHandle addBtn = page.querySelector("div.vm-btn:has-text('增加订阅方案')");
+        if (addBtn == null) {
+            // 也尝试用 Playwright text 选择器
             try {
-                ElementHandle element = page.querySelector(selector);
-                if (element != null && element.isVisible()) {
-                    element.click();
-                    page.waitForLoadState();
-                    log.info("[BrowserAuto] Clicked plan creation entry: {}", selector);
-                    return true;
-                }
+                addBtn = page.querySelector(":has-text('增加订阅方案')");
             } catch (Exception ignored) {
             }
         }
 
-        // 尝试直接导航到常见的创建页 URL
-        String[] createUrls = {
-                "https://ifdian.net/setting/plan",
-                "https://ifdian.net/creator/plan/create",
-                "https://ifdian.net/creator/plan/new",
-                "https://ifdian.net/dashboard/plan/create",
-                "https://ifdian.net/dashboard/plan/new",
-                "https://ifdian.net/plan/create",
-                "https://ifdian.net/plan/new"
-        };
+        if (addBtn != null && addBtn.isVisible()) {
+            addBtn.click();
+            page.waitForTimeout(1500); // 等待 Vue 渲染新卡片
+            log.info("[BrowserAuto] Clicked '增加订阅方案' to add new card");
 
-        for (String url : createUrls) {
-            try {
-                page.navigate(url);
-                page.waitForLoadState();
-                // 检查是否成功到达创建页 (不是重定向回登录页)
-                if (!page.url().contains("/login")) {
-                    log.info("[BrowserAuto] Navigated to: {}", url);
-                    return true;
-                }
-            } catch (Exception ignored) {
+            // 新卡片应该是列表的最后一个
+            List<ElementHandle> updatedCards = page.querySelectorAll(".vm-plan-edit");
+            if (updatedCards.size() > cards.size()) {
+                return updatedCards.size() - 1;
             }
         }
 
-        return false;
+        log.warn("[BrowserAuto] No empty card found and couldn't add new one");
+        return -1;
     }
 
     /**
-     * 填写方案创建表单
+     * 在目标方案卡片内填写表单字段
+     *
+     * <p>爱发电方案卡片使用以下选择器（无 name 属性）：</p>
+     * <ul>
+     *   <li>方案名称: input[placeholder*='赞助昵称']</li>
+     *   <li>价格: input.money-input 或 input[placeholder='00.00']</li>
+     *   <li>描述: textarea[placeholder*='奖励详情']</li>
+     * </ul>
      */
-    private boolean fillPlanCreationForm(Page page, PlanCreationRequest request) {
+    private boolean fillPlanCreationForm(Page page, PlanCreationRequest request, int cardIndex) {
+        List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
+        if (cardIndex >= cards.size()) {
+            log.warn("[BrowserAuto] Card index {} out of range (total: {})", cardIndex, cards.size());
+            return false;
+        }
+
+        ElementHandle card = cards.get(cardIndex);
         boolean anyFilled = false;
 
         // 方案名称
-        if (request.getTitle() != null) {
-            anyFilled |= tryFill(page, request.getTitle(),
-                    "input[name='title']", "input[name='name']",
-                    "input[placeholder*='方案']", "input[placeholder*='名称']",
-                    "#plan-title", "#plan-name");
+        if (request.getTitle() != null && !request.getTitle().isBlank()) {
+            anyFilled |= tryFillInCard(card, request.getTitle(),
+                    "input[placeholder*='赞助昵称']",
+                    "input.gl-input.w75");
         }
 
         // 价格
         if (request.getPrice() != null) {
-            anyFilled |= tryFill(page, String.valueOf(request.getPrice()),
-                    "input[name='price']", "input[name='amount']",
-                    "input[placeholder*='金额']", "input[placeholder*='价格']",
-                    "#plan-price", "#plan-amount");
+            anyFilled |= tryFillInCard(card, String.valueOf(request.getPrice()),
+                    "input[placeholder='00.00']",
+                    "input.money-input",
+                    "input[inputmode='decimal']");
         }
 
         // 方案描述
-        if (request.getDescription() != null) {
-            anyFilled |= tryFill(page, request.getDescription(),
-                    "textarea[name='description']", "textarea[name='desc']",
-                    "textarea[placeholder*='描述']", "textarea[placeholder*='介绍']",
-                    "#plan-description", "#plan-desc");
+        if (request.getDescription() != null && !request.getDescription().isBlank()) {
+            anyFilled |= tryFillInCard(card, request.getDescription(),
+                    "textarea[placeholder*='奖励详情']",
+                    "textarea.gl-textarea");
         }
 
         return anyFilled;
     }
 
     /**
-     * 尝试用多个选择器定位并填写表单字段
+     * 在方案卡片内尝试用多个选择器定位并填写字段
      */
-    private boolean tryFill(Page page, String value, String... selectors) {
+    private boolean tryFillInCard(ElementHandle card, String value, String... selectors) {
         for (String selector : selectors) {
             try {
-                ElementHandle element = page.querySelector(selector);
+                ElementHandle element = card.querySelector(selector);
                 if (element != null && element.isVisible()) {
+                    element.click(); // 先点击聚焦
                     element.fill(value);
                     log.info("[BrowserAuto] Filled {} -> {}", selector, value);
                     return true;
@@ -518,30 +759,48 @@ public class BrowserAutomationService {
     }
 
     /**
-     * 提交方案表单
+     * 点击目标方案卡片内的「保存」按钮
+     *
+     * <p>爱发电的保存按钮是 &lt;div class="vm-btn look3 pt12 pb12"&gt;保存&lt;/div&gt;，
+     * 不是 &lt;button&gt; 元素。</p>
      */
-    private boolean submitPlanForm(Page page) {
-        String[] submitSelectors = {
-                "button[type='submit']",
-                "button:has-text('提交')",
-                "button:has-text('保存')",
-                "button:has-text('创建')",
-                "button:has-text('发布')",
-                "input[type='submit']",
-                ".submit-btn",
-                "#submit"
+    private boolean submitPlanForm(Page page, int cardIndex) {
+        List<ElementHandle> cards = page.querySelectorAll(".vm-plan-edit");
+        if (cardIndex >= cards.size()) {
+            log.warn("[BrowserAuto] Card index {} out of range for submit", cardIndex);
+            return false;
+        }
+
+        ElementHandle card = cards.get(cardIndex);
+
+        // 方案卡片内的保存按钮: div.vm-btn.look3.pt12.pb12 包含文本「保存」
+        String[] saveSelectors = {
+                "div.vm-btn:has-text('保存')",
+                ".vm-btn.look3.pt12.pb12",
+                "div:has-text('保存')"
         };
 
-        for (String selector : submitSelectors) {
+        for (String selector : saveSelectors) {
             try {
-                ElementHandle button = page.querySelector(selector);
-                if (button != null && button.isVisible()) {
-                    button.click();
-                    page.waitForTimeout(2000);
+                ElementHandle btn = card.querySelector(selector);
+                if (btn != null && btn.isVisible()) {
+                    btn.click();
+                    log.info("[BrowserAuto] Clicked save button: {}", selector);
                     return true;
                 }
             } catch (Exception ignored) {
             }
+        }
+
+        // 最后尝试：使用 Playwright 全局文本选择器
+        try {
+            ElementHandle btn = page.querySelector("div.vm-btn.look3.pt12.pb12");
+            if (btn != null && btn.isVisible()) {
+                btn.click();
+                log.info("[BrowserAuto] Clicked save button via global selector");
+                return true;
+            }
+        } catch (Exception ignored) {
         }
 
         return false;
@@ -549,30 +808,57 @@ public class BrowserAutomationService {
 
     /**
      * 从页面提取 plan_id
+     *
+     * <p>爱发电方案设置是 Vue SPA，保存后不会跳转页面，plan_id 不会出现在 URL 中。
+     * 尝试从页面内容、Vue 数据或 DOM 属性中提取。</p>
      */
     private String extractPlanId(Page page) {
         String url = page.url();
         String content = page.content();
 
-        // 从 URL 中提取: /plan/xxx 或 plan_id=xxx
+        // 1. 从 URL 中提取 (不太可能，但保留)
         Pattern urlPattern = Pattern.compile("/plan/([a-f0-9]{32,})");
         Matcher m = urlPattern.matcher(url);
         if (m.find()) {
             return m.group(1);
         }
 
-        // 从页面内容中提取
+        // 2. 从页面内容中提取（Vue 渲染后的数据）
         Pattern contentPattern = Pattern.compile("plan_id[\"']?\\s*[:=]\\s*[\"']([a-f0-9]{32,})[\"']");
         m = contentPattern.matcher(content);
         if (m.find()) {
             return m.group(1);
         }
 
-        // 尝试通过元素选择器
+        // 3. 从 Vue 组件的 data 属性中提取
+        Pattern dataPattern = Pattern.compile("data-plan[_-]?id[\"']?\\s*[=:\"']\\s*[\"']?([a-f0-9]{32,})");
+        m = dataPattern.matcher(content);
+        if (m.find()) {
+            return m.group(1);
+        }
+
+        // 4. 尝试通过元素选择器
         try {
             ElementHandle el = page.querySelector("[data-plan-id]");
             if (el != null) {
                 return el.getAttribute("data-plan-id");
+            }
+        } catch (Exception ignored) {
+        }
+
+        // 5. 尝试从页面 JavaScript 中提取 Vue 数据
+        try {
+            Object result = page.evaluate(
+                    "() => { try { var plans = document.querySelector('.vm-block-plan').__vue__; " +
+                    "if (plans && plans.plans) return plans.plans.map(p => p.plan_id).join(','); " +
+                    "} catch(e) {} return null; }");
+            if (result != null) {
+                String ids = String.valueOf(result);
+                if (!ids.isBlank()) {
+                    // 返回最新的（最后一个）
+                    String[] idArr = ids.split(",");
+                    return idArr[idArr.length - 1].trim();
+                }
             }
         } catch (Exception ignored) {
         }

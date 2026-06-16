@@ -3,7 +3,7 @@
 [![Java](https://img.shields.io/badge/Java-17%2B-blue)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.7.18-brightgreen)](https://spring.io/projects/spring-boot)
 [![Maven](https://img.shields.io/badge/Maven-3.8%2B-orange)](https://maven.apache.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
 **Ifdain** 是一个面向 Java 生态的 [爱发电 (afdian.net)](https://ifdian.net) 支付集成库。
 
@@ -93,7 +93,7 @@ ifdain:
   # 管理后台配置（仅 ifdain-boot 模块）
   admin:
     username: admin
-    password: admin123
+    password: admin           # ← 首次安装后将被替换，务必修改！
     base-path: /admin
 ```
 
@@ -163,7 +163,7 @@ https://你的域名/webhook/ifdian
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `ifdain.admin.username` | String | `admin` | 管理后台登录用户名 |
-| `ifdain.admin.password` | String | `admin123` | 管理后台登录密码 |
+| `ifdain.admin.password` | String | `admin` | 管理后台登录密码（首次安装后将被替换） |
 | `ifdain.admin.base-path` | String | `/admin` | 管理后台基础路径 |
 
 ---
@@ -334,6 +334,7 @@ curl -H "X-Api-Key: your-api-key" \
 | 订单管理 | `/admin/orders` | 分页列表、关键词搜索、订单详情（含原始 JSON 快照） |
 | API 工具 | `/admin/tools` | 在线调试：Ping 连通测试、查询订单、查询赞助者、查询方案、发送私信、**拉取订单同步入库** |
 | 系统设置 | `/admin/settings` | API/Webhook 配置、Redis 配置、管理员账号、数据库状态、连接测试 |
+| 赞助方案 | `/admin/plans` | 方案发现、查询、创建、修改、删除、隐藏（支持浏览器自动化与 API 两种模式） |
 
 ### 安装向导安全机制
 
@@ -442,10 +443,10 @@ ifdain/
 │               ├── orders.html       # 订单列表
 │               ├── order-detail.html # 订单详情
 │               ├── settings.html     # 系统设置
+│               ├── plans.html        # 赞助方案管理
 │               └── tools.html        # API 工具
 ├── sql/
 │   └── schema.sql            # MySQL 建表脚本
-├── api文档.md                # 爱发电开发者文档
 ├── pom.xml                   # 父 POM
 └── README.md
 ```
@@ -490,8 +491,17 @@ java -jar ifdain-boot/target/ifdain-boot-1.0.0.jar --spring.profiles.active=stan
 
 ---
 
+## 安全提示
+
+- 默认管理员密码为 `admin`，**首次安装向导会强制修改**，请勿使用默认密码部署到公网
+- `application.yml` 中 standalone/production 配置的数据库密码为占位符，部署前必须替换为真实密码
+- 建议生产环境通过环境变量或 `application-local.yml`（已 gitignore）覆盖敏感配置
+- `ifdain.external-api-key` 和 `ifdain.oauth2-client-secret` 等密钥切勿使用示例值
+
+---
+
 ## 许可证
 
-[MIT License](LICENSE)
+[Apache License 2.0](LICENSE)
 
 Copyright (c) 2026 Ifdain

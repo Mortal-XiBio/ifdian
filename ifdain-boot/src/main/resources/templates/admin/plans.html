@@ -142,6 +142,61 @@
                 </div>
             </div>
 
+            <!-- 管理已有方案 — 修改 / 删除 / 隐藏 -->
+            <div class="card mb-3 border-warning">
+                <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-pencil-square me-1"></i>管理已有方案</h6>
+                </div>
+                <div class="card-body p-2">
+                    <p class="text-muted small mb-2">
+                        通过浏览器自动化在爱发电官网修改、删除或隐藏已有方案。需要先在系统设置中配置爱发电登录 Cookie。
+                    </p>
+                    <div class="mb-2">
+                        <label class="form-label small">方案名称（定位目标方案）<span class="text-danger">*</span></label>
+                        <input type="text" id="manageTargetTitle" class="form-control form-control-sm"
+                               placeholder="输入要操作的方案名称，例如：每月奶茶赞助">
+                    </div>
+                    <hr class="my-2">
+                    <p class="text-muted small mb-1 fw-bold">修改方案</p>
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <input type="text" id="manageNewTitle" class="form-control form-control-sm"
+                                   placeholder="新名称（留空不改）">
+                        </div>
+                        <div class="col-4">
+                            <input type="number" id="manageNewPrice" class="form-control form-control-sm"
+                                   placeholder="新价格" min="0" step="0.01">
+                        </div>
+                        <div class="col-4">
+                            <input type="text" id="manageNewDesc" class="form-control form-control-sm"
+                                   placeholder="新描述（留空不改）">
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="button" class="btn btn-warning btn-sm"
+                                th:disabled="${!browserAutomationAvailable || !afdianCookieConfigured}"
+                                onclick="managePlan('modify')">
+                            <i class="bi bi-pencil"></i> 修改
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm"
+                                th:disabled="${!browserAutomationAvailable || !afdianCookieConfigured}"
+                                onclick="managePlan('delete')">
+                            <i class="bi bi-trash"></i> 删除
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                                th:disabled="${!browserAutomationAvailable || !afdianCookieConfigured}"
+                                onclick="managePlan('toggle-hide')">
+                            <i class="bi bi-eye-slash"></i> 隐藏/显示
+                        </button>
+                        <div id="manageLoading" class="d-none">
+                            <div class="spinner-border spinner-border-sm text-warning" role="status"></div>
+                            <span class="ms-1 small text-muted">操作中...</span>
+                        </div>
+                    </div>
+                    <div id="manageResult" class="mt-2 d-none"></div>
+                </div>
+            </div>
+
             <!-- 发现方案 -->
             <div class="card mb-3 border-success">
                 <div class="card-header bg-success bg-opacity-10">
@@ -485,6 +540,82 @@
                     html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1" style="max-height:300px;" alt="截图">';
                     html += '</details>';
                 }
+            }
+            resultEl.innerHTML = html;
+            resultEl.classList.remove('d-none');
+        })
+        .catch(function(err) {
+            loadingEl.classList.add('d-none');
+            resultEl.innerHTML = '<div class="alert alert-danger small py-1">请求失败: ' + err.message + '</div>';
+            resultEl.classList.remove('d-none');
+        });
+    }
+
+    // ===== 管理已有方案 (修改/删除/隐藏) =====
+
+    function managePlan(action) {
+        var targetTitle = document.getElementById('manageTargetTitle').value.trim();
+        if (!targetTitle) {
+            alert('请输入要操作的方案名称');
+            return;
+        }
+
+        if (action === 'delete') {
+            if (!confirm('确定要删除方案「' + targetTitle + '」吗？此操作不可撤销！')) {
+                return;
+            }
+        }
+
+        var formData = new URLSearchParams();
+        formData.append('title', targetTitle);
+
+        if (action === 'modify') {
+            var newTitle = document.getElementById('manageNewTitle').value.trim();
+            var newPrice = document.getElementById('manageNewPrice').value.trim();
+            var newDesc = document.getElementById('manageNewDesc').value.trim();
+            if (!newTitle && !newPrice && !newDesc) {
+                alert('请至少填写一项要修改的内容');
+                return;
+            }
+            if (newTitle) formData.append('newTitle', newTitle);
+            if (newPrice) formData.append('newPrice', newPrice);
+            if (newDesc) formData.append('newDescription', newDesc);
+        }
+
+        var loadingEl = document.getElementById('manageLoading');
+        var resultEl = document.getElementById('manageResult');
+        loadingEl.classList.remove('d-none');
+        resultEl.classList.add('d-none');
+
+        var endpoint = action === 'toggle-hide' ? '/plans/toggle-hide' : '/plans/' + action;
+
+        fetch(basePath + endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', [csrfHeader]: csrfToken },
+            body: formData.toString()
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            loadingEl.classList.add('d-none');
+            var html = '';
+            if (data.success) {
+                html += '<div class="alert alert-success small py-1 mb-2">';
+                html += '<i class="bi bi-check-circle"></i> ' + (data.message || '操作成功');
+                html += '</div>';
+            } else {
+                var alertClass = data.needLogin ? 'alert-warning' : 'alert-danger';
+                html += '<div class="alert ' + alertClass + ' small py-1 mb-2">';
+                html += '<i class="bi bi-' + (data.needLogin ? 'exclamation-triangle' : 'x-circle') + '"></i> ';
+                html += (data.message || '操作失败');
+                html += '</div>';
+                if (data.needLogin) {
+                    html += '<div class="text-muted small mb-2">请在浏览器中登录爱发电后导出 Cookie，然后粘贴到系统设置中。</div>';
+                }
+            }
+            if (data.screenshotBase64) {
+                html += '<details><summary class="small text-muted">故障截图</summary>';
+                html += '<img src="data:image/png;base64,' + data.screenshotBase64 + '" class="img-fluid border rounded mt-1" style="max-height:300px;" alt="截图">';
+                html += '</details>';
             }
             resultEl.innerHTML = html;
             resultEl.classList.remove('d-none');

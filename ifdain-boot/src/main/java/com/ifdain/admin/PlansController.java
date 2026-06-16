@@ -126,6 +126,68 @@ public class PlansController {
     }
 
     /**
+     * 修改赞助方案 — AJAX 接口，通过浏览器自动化修改已有方案
+     */
+    @PostMapping("/modify")
+    @ResponseBody
+    public Map<String, Object> modifyPlan(
+            @RequestParam String currentTitle,
+            @RequestParam(required = false) String newTitle,
+            @RequestParam(required = false) Double newPrice,
+            @RequestParam(required = false) String newDescription) {
+
+        BrowserAutomationService.PlanCreationResult result =
+                browserAutomation.modifyPlan(currentTitle, newTitle, newPrice, newDescription);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", result.isSuccess());
+        response.put("message", result.getMessage());
+        response.put("needLogin", result.isNeedLogin());
+        if (result.getScreenshotBase64() != null) {
+            response.put("screenshotBase64", result.getScreenshotBase64());
+        }
+        return response;
+    }
+
+    /**
+     * 删除赞助方案 — AJAX 接口，通过浏览器自动化删除方案
+     */
+    @PostMapping("/delete")
+    @ResponseBody
+    public Map<String, Object> deletePlan(@RequestParam String title) {
+        BrowserAutomationService.PlanCreationResult result =
+                browserAutomation.deletePlan(title);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", result.isSuccess());
+        response.put("message", result.getMessage());
+        response.put("needLogin", result.isNeedLogin());
+        if (result.getScreenshotBase64() != null) {
+            response.put("screenshotBase64", result.getScreenshotBase64());
+        }
+        return response;
+    }
+
+    /**
+     * 切换方案隐藏/显示 — AJAX 接口
+     */
+    @PostMapping("/toggle-hide")
+    @ResponseBody
+    public Map<String, Object> toggleHidePlan(@RequestParam String title) {
+        BrowserAutomationService.PlanCreationResult result =
+                browserAutomation.toggleHidePlan(title);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", result.isSuccess());
+        response.put("message", result.getMessage());
+        response.put("needLogin", result.isNeedLogin());
+        if (result.getScreenshotBase64() != null) {
+            response.put("screenshotBase64", result.getScreenshotBase64());
+        }
+        return response;
+    }
+
+    /**
      * 发现赞助方案 — AJAX 接口，从爱发电 API 订单中提取方案列表
      */
     @PostMapping("/discover")

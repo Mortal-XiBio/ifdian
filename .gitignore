@@ -33,6 +33,17 @@ build_core.bat
 gen.ps1
 _gen_readme.py
 
+# --- Qoder internal specs ---
+.qoder/
+
+# --- VS Code ---
+.vscode/
+
+# --- Env / local config overrides ---
+*.env
+application-local.yml
+application-local.properties
+
 # --- Temp ---
 *.tmp
 *.bak
