@@ -3,6 +3,7 @@ package com.ifdain.admin;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ifdain.automation.BrowserAutomationService;
+import com.ifdain.automation.IfdianPlanApiService;
 import com.ifdain.entity.OrderStatus;
 import com.ifdain.repository.IfdianOrderRepository;
 import com.ifdain.service.AfdianApiClient;
@@ -40,6 +41,7 @@ public class PlansController {
     private final AfdianApiClient apiClient;
     private final ObjectMapper objectMapper;
     private final BrowserAutomationService browserAutomation;
+    private final IfdianPlanApiService planApiService;
 
     /**
      * 方案管理主页 — 展示本地数据库中已有的方案汇总
@@ -59,6 +61,8 @@ public class PlansController {
         boolean cookieConfigured = !configService.getOrDefault(
                 BrowserAutomationService.KEY_AFDIAN_COOKIE, "").isBlank();
         model.addAttribute("afdianCookieConfigured", cookieConfigured);
+        // API 模式可用性（只需要 Cookie 即可）
+        model.addAttribute("apiModeAvailable", cookieConfigured);
 
         // 从本地数据库汇总所有时间范围内的已支付订单，按方案分组
         LocalDateTime now = LocalDateTime.now();
@@ -86,23 +90,49 @@ public class PlansController {
         boolean cookieConfigured = !configService.getOrDefault(
                 BrowserAutomationService.KEY_AFDIAN_COOKIE, "").isBlank();
         result.put("cookieConfigured", cookieConfigured);
-        // 推荐方案: "iframe" 或 "browser"
-        result.put("recommendedMode", cookieConfigured ? "browser" : "iframe");
+        // API 模式是否可用（只需 Cookie）
+        result.put("apiModeAvailable", cookieConfigured);
+        // 推荐方案: "api" > "browser" > "iframe"
+        if (cookieConfigured) {
+            result.put("recommendedMode", "api");
+        } else if (browserAutomation.isAvailable()) {
+            result.put("recommendedMode", "browser");
+        } else {
+            result.put("recommendedMode", "iframe");
+        }
         return result;
     }
 
     /**
-     * 创建赞助方案 — AJAX 接口，通过浏览器自动化在爱发电官网创建
+     * 列出全部方案 — AJAX 接口，通过内部 API 获取
+     */
+    @PostMapping("/list")
+    @ResponseBody
+    public Map<String, Object> listPlans() {
+        IfdianPlanApiService.ApiResult apiResult = planApiService.listPlans();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", apiResult.isSuccess());
+        result.put("message", apiResult.getMessage());
+        result.put("needLogin", apiResult.isNeedLogin());
+        if (apiResult.getExtra() != null) {
+            result.put("plans", apiResult.getExtra().get("plans"));
+            result.put("planCount", apiResult.getExtra().get("planCount"));
+        }
+        return result;
+    }
+
+    /**
+     * 创建赞助方案 — AJAX 接口
      *
-     * <p>这是 iframe 方案的 fallback。前端先尝试 iframe，被阻止时
-     * 收集用户输入的方案参数调用此接口。</p>
+     * <p>优先使用伪 API 模式（毫秒级），失败时降级为浏览器自动化。</p>
      */
     @PostMapping("/create")
     @ResponseBody
     public Map<String, Object> createPlan(
             @RequestParam String title,
             @RequestParam(required = false) Double price,
-            @RequestParam(required = false) String description) {
+            @RequestParam(required = false) String description,
+            @RequestParam(defaultValue = "api") String mode) {
 
         if (price != null && (price < 5 || price > 20000)) {
             Map<String, Object> err = new LinkedHashMap<>();
@@ -111,6 +141,32 @@ public class PlansController {
             return err;
         }
 
+        // 优先 API 模式
+        if ("api".equals(mode)) {
+            IfdianPlanApiService.ApiResult apiResult = planApiService.createPlan(title, price, description);
+            if (apiResult.isSuccess()) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("success", true);
+                result.put("planId", apiResult.getExtra() != null ? apiResult.getExtra().get("planId") : null);
+                result.put("message", apiResult.getMessage());
+                result.put("mode", "api");
+                return result;
+            }
+            // API 失败且非 Cookie 问题 → 记录日志并降级
+            if (!apiResult.isNeedLogin()) {
+                log.warn("[Plans] API mode failed ({}), falling back to browser", apiResult.getMessage());
+            } else {
+                // Cookie 失效，不降级，直接返回
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("success", false);
+                result.put("message", apiResult.getMessage());
+                result.put("needLogin", true);
+                result.put("mode", "api");
+                return result;
+            }
+        }
+
+        // 降级：浏览器自动化
         BrowserAutomationService.PlanCreationRequest request =
                 BrowserAutomationService.PlanCreationRequest.builder()
                         .title(title)
@@ -126,6 +182,7 @@ public class PlansController {
         result.put("planId", creationResult.getPlanId());
         result.put("message", creationResult.getMessage());
         result.put("needLogin", creationResult.isNeedLogin());
+        result.put("mode", "browser");
         if (creationResult.getScreenshotBase64() != null) {
             result.put("screenshotBase64", creationResult.getScreenshotBase64());
         }
@@ -133,11 +190,38 @@ public class PlansController {
     }
 
     /**
-     * 删除赞助方案 — AJAX 接口，通过浏览器自动化删除方案
+     * 删除赞助方案 — AJAX 接口
+     *
+     * <p>优先使用伪 API 模式（通过方案名称查找 plan_id，再调用删除 API），
+     * 失败时降级为浏览器自动化。</p>
      */
     @PostMapping("/delete")
     @ResponseBody
-    public Map<String, Object> deletePlan(@RequestParam String title) {
+    public Map<String, Object> deletePlan(@RequestParam String title,
+                                           @RequestParam(defaultValue = "api") String mode) {
+        // 优先 API 模式
+        if ("api".equals(mode)) {
+            String planId = planApiService.findPlanIdByTitle(title);
+            if (planId != null) {
+                IfdianPlanApiService.ApiResult apiResult = planApiService.deletePlan(planId);
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("success", apiResult.isSuccess());
+                response.put("message", apiResult.getMessage());
+                response.put("needLogin", apiResult.isNeedLogin());
+                response.put("mode", "api");
+                if (apiResult.isSuccess()) {
+                    return response;
+                }
+                if (apiResult.isNeedLogin()) {
+                    return response;
+                }
+                log.warn("[Plans] API delete failed ({}), falling back to browser", apiResult.getMessage());
+            } else {
+                log.warn("[Plans] Plan not found by title '{}' via API, falling back to browser", title);
+            }
+        }
+
+        // 降级：浏览器自动化
         BrowserAutomationService.PlanCreationResult result =
                 browserAutomation.deletePlan(title);
 
@@ -145,6 +229,7 @@ public class PlansController {
         response.put("success", result.isSuccess());
         response.put("message", result.getMessage());
         response.put("needLogin", result.isNeedLogin());
+        response.put("mode", "browser");
         if (result.getScreenshotBase64() != null) {
             response.put("screenshotBase64", result.getScreenshotBase64());
         }
@@ -153,10 +238,36 @@ public class PlansController {
 
     /**
      * 切换方案隐藏/显示 — AJAX 接口
+     *
+     * <p>优先使用伪 API 模式，失败时降级为浏览器自动化。</p>
      */
     @PostMapping("/toggle-hide")
     @ResponseBody
-    public Map<String, Object> toggleHidePlan(@RequestParam String title) {
+    public Map<String, Object> toggleHidePlan(@RequestParam String title,
+                                               @RequestParam(defaultValue = "api") String mode) {
+        // 优先 API 模式
+        if ("api".equals(mode)) {
+            String planId = planApiService.findPlanIdByTitle(title);
+            if (planId != null) {
+                IfdianPlanApiService.ApiResult apiResult = planApiService.togglePlanVisibility(planId);
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("success", apiResult.isSuccess());
+                response.put("message", apiResult.getMessage());
+                response.put("needLogin", apiResult.isNeedLogin());
+                response.put("mode", "api");
+                if (apiResult.isSuccess()) {
+                    return response;
+                }
+                if (apiResult.isNeedLogin()) {
+                    return response;
+                }
+                log.warn("[Plans] API toggle failed ({}), falling back to browser", apiResult.getMessage());
+            } else {
+                log.warn("[Plans] Plan not found by title '{}' via API, falling back to browser", title);
+            }
+        }
+
+        // 降级：浏览器自动化
         BrowserAutomationService.PlanCreationResult result =
                 browserAutomation.toggleHidePlan(title);
 
@@ -164,6 +275,7 @@ public class PlansController {
         response.put("success", result.isSuccess());
         response.put("message", result.getMessage());
         response.put("needLogin", result.isNeedLogin());
+        response.put("mode", "browser");
         if (result.getScreenshotBase64() != null) {
             response.put("screenshotBase64", result.getScreenshotBase64());
         }

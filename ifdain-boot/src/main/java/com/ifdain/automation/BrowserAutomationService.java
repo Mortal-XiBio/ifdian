@@ -239,22 +239,39 @@ public class BrowserAutomationService {
                 }
 
                 delBtn.click();
-                page.waitForTimeout(1000);
+                page.waitForTimeout(1500);
 
-                // 爱发电可能会弹出确认对话框，尝试点击确认
+                // 爱发电删除确认：优先处理 Vue 自定义弹窗 (vue-dialog)，其次处理浏览器原生 confirm
                 try {
-                    ElementHandle confirmBtn = page.querySelector("div.vm-btn:has-text('确定')");
+                    // 处理浏览器原生 confirm() 弹窗
+                    page.onDialog(dialog -> {
+                        log.info("[BrowserAuto] Dialog appeared: type={}, message={}", dialog.type(), dialog.message());
+                        dialog.accept();
+                    });
+
+                    // 处理 Vue 自定义弹窗 (.vue-dialog)
+                    ElementHandle confirmBtn = page.querySelector("button.vue-dialog-button:has-text('确认')");
                     if (confirmBtn == null) {
-                        confirmBtn = page.querySelector("button:has-text('确定')");
+                        confirmBtn = page.querySelector(".vue-dialog-button:has-text('确认')");
+                    }
+                    if (confirmBtn == null) {
+                        confirmBtn = page.querySelector("button:has-text('确认')");
                     }
                     if (confirmBtn == null) {
                         confirmBtn = page.querySelector("div.vm-btn:has-text('确认')");
                     }
+                    if (confirmBtn == null) {
+                        confirmBtn = page.querySelector("button:has-text('确定')");
+                    }
                     if (confirmBtn != null && confirmBtn.isVisible()) {
                         confirmBtn.click();
-                        page.waitForTimeout(1000);
+                        log.info("[BrowserAuto] Clicked delete confirm button");
+                        page.waitForTimeout(2000);
+                    } else {
+                        log.warn("[BrowserAuto] No confirm button found in dialog");
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    log.warn("[BrowserAuto] Error handling delete dialog: {}", e.getMessage());
                 }
 
                 page.waitForTimeout(1500);
