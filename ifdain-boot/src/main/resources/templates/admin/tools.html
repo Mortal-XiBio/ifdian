@@ -5,7 +5,50 @@
     <title>API 工具 - 管理后台</title>
 </head>
 <body>
-<div th:fragment="content">
+<div th:fragment="content" class="tools-page">
+    <style>
+        /* 桌面端: API 响应卡片固定不随滚动 */
+        @media (min-width: 992px) {
+            .sticky-result-col {
+                position: sticky;
+                top: 0;
+            }
+            .sticky-result-col > .card {
+                max-height: calc(100vh - 4rem);
+                display: flex;
+                flex-direction: column;
+            }
+            .sticky-result-col > .card > .card-body {
+                overflow-y: auto;
+                flex: 1;
+            }
+        }
+        /* 表格自适应列宽 + 长文本断行 */
+        .tools-page .table td {
+            word-break: break-all;
+            max-width: 220px;
+        }
+        .tools-page .table th {
+            white-space: nowrap;
+        }
+        /* 手机端: 紧凑化 */
+        @media (max-width: 768px) {
+            .tools-page .card-header h6 { font-size: .8rem; }
+            .tools-page .card-body { padding: .6rem .75rem; }
+            .tools-page .form-label { margin-bottom: .15rem; }
+            .tools-page .mb-2 { margin-bottom: .35rem !important; }
+            .tools-page .mb-3 { margin-bottom: .5rem !important; }
+            .tools-page .row.g-3 { --bs-gutter-y: .5rem; }
+            .tools-page .table-responsive { max-height: 300px; }
+            .tools-page table { min-width: 480px; }
+            .tools-page .border-bottom { margin-bottom: .75rem !important; padding-bottom: .5rem !important; }
+        }
+        /* 平板端 */
+        @media (min-width: 769px) and (max-width: 991px) {
+            .tools-page .card-body { padding: .75rem; }
+            .tools-page .table-responsive { max-height: 350px; }
+        }
+    </style>
     <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
         <h1 class="h3">API 工具</h1>
         <small class="text-muted">在线调试爱发电 API</small>
@@ -40,19 +83,19 @@
                     <form method="post" th:action="@{${basePath} + '/tools/query-order'}">
                         <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
                         <div class="mb-2">
-                            <label class="form-label small">订单号 (精确查询，可选)</label>
-                            <input type="text" name="outTradeNo" class="form-control form-control-sm"
+                            <label for="orderOutTradeNo" class="form-label small">订单号 (精确查询，可选)</label>
+                            <input type="text" id="orderOutTradeNo" name="outTradeNo" class="form-control form-control-sm"
                                    th:value="${formOutTradeNo}" placeholder="留空则分页查询全部">
                         </div>
                         <div class="row mb-2">
                             <div class="col">
-                                <label class="form-label small">页码</label>
-                                <input type="number" name="page" class="form-control form-control-sm"
+                                <label for="orderPage" class="form-label small">页码</label>
+                                <input type="number" id="orderPage" name="page" class="form-control form-control-sm"
                                        th:value="${formPage != null ? formPage : 1}" min="1">
                             </div>
                             <div class="col">
-                                <label class="form-label small">每页条数</label>
-                                <input type="number" name="perPage" class="form-control form-control-sm"
+                                <label for="orderPerPage" class="form-label small">每页条数</label>
+                                <input type="number" id="orderPerPage" name="perPage" class="form-control form-control-sm"
                                        th:value="${formPerPage != null ? formPerPage : 20}" min="1" max="100">
                             </div>
                         </div>
@@ -76,18 +119,18 @@
                         <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
                         <div class="row mb-2">
                             <div class="col">
-                                <label class="form-label small">起始页</label>
-                                <input type="number" name="startPage" class="form-control form-control-sm"
+                                <label for="syncStartPage" class="form-label small">起始页</label>
+                                <input type="number" id="syncStartPage" name="startPage" class="form-control form-control-sm"
                                        th:value="${formPage != null ? formPage : 1}" min="1">
                             </div>
                             <div class="col">
-                                <label class="form-label small">每页条数</label>
-                                <input type="number" name="perPage" class="form-control form-control-sm"
+                                <label for="syncPerPage" class="form-label small">每页条数</label>
+                                <input type="number" id="syncPerPage" name="perPage" class="form-control form-control-sm"
                                        th:value="${formPerPage != null ? formPerPage : 100}" min="1" max="100">
                             </div>
                             <div class="col">
-                                <label class="form-label small">最大页数 (0=全部)</label>
-                                <input type="number" name="maxPages" class="form-control form-control-sm"
+                                <label for="syncMaxPages" class="form-label small">最大页数 (0=全部)</label>
+                                <input type="number" id="syncMaxPages" name="maxPages" class="form-control form-control-sm"
                                        th:value="${formMaxPages != null ? formMaxPages : 0}" min="0">
                             </div>
                         </div>
@@ -108,13 +151,13 @@
                         <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
                         <div class="row mb-2">
                             <div class="col">
-                                <label class="form-label small">页码</label>
-                                <input type="number" name="page" class="form-control form-control-sm"
+                                <label for="sponsorPage" class="form-label small">页码</label>
+                                <input type="number" id="sponsorPage" name="page" class="form-control form-control-sm"
                                        th:value="${formPage != null ? formPage : 1}" min="1">
                             </div>
                             <div class="col">
-                                <label class="form-label small">每页条数</label>
-                                <input type="number" name="perPage" class="form-control form-control-sm"
+                                <label for="sponsorPerPage" class="form-label small">每页条数</label>
+                                <input type="number" id="sponsorPerPage" name="perPage" class="form-control form-control-sm"
                                        th:value="${formPerPage != null ? formPerPage : 20}" min="1" max="100">
                             </div>
                         </div>
@@ -138,13 +181,13 @@
                         <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
                         <div class="row mb-2">
                             <div class="col">
-                                <label class="form-label small">扫描页数</label>
-                                <input type="number" name="maxPages" class="form-control form-control-sm"
+                                <label for="discoverMaxPages" class="form-label small">扫描页数</label>
+                                <input type="number" id="discoverMaxPages" name="maxPages" class="form-control form-control-sm"
                                        value="3" min="1" max="20">
                             </div>
                             <div class="col">
-                                <label class="form-label small">每页条数</label>
-                                <input type="number" name="perPage" class="form-control form-control-sm"
+                                <label for="discoverPerPage" class="form-label small">每页条数</label>
+                                <input type="number" id="discoverPerPage" name="perPage" class="form-control form-control-sm"
                                        value="100" min="1" max="100">
                             </div>
                         </div>
@@ -164,39 +207,13 @@
                     <form id="planQueryForm" method="post" th:action="@{${basePath} + '/tools/query-plan'}">
                         <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
                         <div class="mb-2">
-                            <label class="form-label small">方案 ID (必填)</label>
-                            <input type="text" name="planId" class="form-control form-control-sm"
+                            <label for="planIdInput" class="form-label small">方案 ID (必填)</label>
+                            <input type="text" id="planIdInput" name="planId" class="form-control form-control-sm"
                                    th:value="${formPlanId}" placeholder="例如: a45353328af911eb973052540025c377" required>
                         </div>
                         <div class="text-end">
                             <button type="submit" class="btn btn-primary btn-sm" th:disabled="${!apiConfigured}">
                                 <i class="bi bi-search"></i> 查询
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- 发送私信 -->
-            <div class="card mb-3">
-                <div class="card-header"><h6 class="mb-0"><i class="bi bi-chat-dots me-1"></i>发送私信</h6></div>
-                <div class="card-body">
-                    <p class="text-muted small">注意：爱发电限制 10次/秒 或 1000次/小时。</p>
-                    <form method="post" th:action="@{${basePath} + '/tools/send-msg'}">
-                        <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
-                        <div class="mb-2">
-                            <label class="form-label small">接收者用户 ID (必填)</label>
-                            <input type="text" name="recipient" class="form-control form-control-sm"
-                                   th:value="${formRecipient}" placeholder="爱发电用户ID" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label small">私信内容 (必填)</label>
-                            <textarea name="content" class="form-control form-control-sm" rows="3"
-                                      th:text="${formContent}" placeholder="请输入私信内容..." required></textarea>
-                        </div>
-                        <div class="text-end">
-                            <button type="submit" class="btn btn-warning btn-sm" th:disabled="${!apiConfigured}">
-                                <i class="bi bi-send"></i> 发送
                             </button>
                         </div>
                     </form>
@@ -356,7 +373,7 @@ function verify(body, signature, secret) {
         </div>
 
         <!-- 右侧：结果展示 -->
-        <div class="col-lg-6">
+        <div class="col-lg-6 sticky-result-col">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0"><i class="bi bi-terminal me-1"></i>API 响应</h6>
@@ -373,13 +390,13 @@ function verify(body, signature, secret) {
                         <div th:if="${queryResult['error']}" class="alert alert-danger py-2 small mb-2">
                             <i class="bi bi-x-circle"></i> <span th:text="${queryResult['message']}"></span>
                         </div>
-                        <div th:if="${!queryResult['error'] and queryType != 'sync' and queryType != 'plans'}" class="alert alert-success py-2 small mb-2">
+                        <div th:if="${queryResult['error'] != true and queryType != 'sync' and queryType != 'plans'}" class="alert alert-success py-2 small mb-2">
                             <i class="bi bi-check-circle"></i> 请求成功 (ec=200)
                         </div>
 
                         <!-- 同步结果 (仅 sync 类型) -->
                         <div th:if="${queryType == 'sync'}">
-                            <div th:if="${!queryResult['error']}" class="alert alert-success py-2 small mb-2">
+                            <div th:if="${queryResult['error'] != true}" class="alert alert-success py-2 small mb-2">
                                 <i class="bi bi-cloud-check"></i> <span th:text="${queryResult['message']}"></span>
                             </div>
                             <div class="row small mb-2">
@@ -416,15 +433,16 @@ function verify(body, signature, secret) {
                                         <tbody>
                                         <tr th:each="plan : ${queryResult['plans']}">
                                             <td>
-                                                <code th:text="${plan['plan_id']}"></code>
+                                                <code th:text="${plan.plan_id}"></code>
                                             </td>
                                             <td>
-                                                <span th:if="${plan['plan_title'] != plan['plan_id']}" th:text="${plan['plan_title']}"></span>
-                                                <span th:if="${plan['plan_title'] == plan['plan_id']}" class="text-muted">（未获取到名称）</span>
+                                                <span th:if="${plan.plan_title != plan.plan_id}" th:text="${plan.plan_title}"></span>
+                                                <span th:if="${plan.plan_title == plan.plan_id}" class="text-muted">（未获取到名称）</span>
                                             </td>
                                             <td class="text-end">
-                                                <a th:href="'javascript:void(0)'"
-                                                   th:onclick="'document.querySelector(\'input[name=planId]\').value=\'' + ${plan['plan_id']} + '\';document.querySelector(\'#planQueryForm\').scrollIntoView();'"
+                                                <a href="javascript:void(0)"
+                                                   th:attr="data-planid=${plan.plan_id}"
+                                                   onclick="document.querySelector('input[name=planId]').value=this.dataset.planid;document.querySelector('#planQueryForm').submit();"
                                                    class="btn btn-outline-primary btn-sm">查询详情</a>
                                             </td>
                                         </tr>
@@ -461,25 +479,39 @@ function verify(body, signature, secret) {
                                 <table class="table table-sm small">
                                     <thead class="table-light">
                                     <tr>
-                                        <th th:each="header : ${queryResult['listHeaders']}" th:text="${header}"></th>
+                                        <th th:each="dhdr : ${queryResult['displayHeaders']}" th:text="${dhdr}"
+                                            style="white-space:nowrap;"></th>
+                                        <!-- 赞助者表格额外加操作列 -->
+                                        <th th:if="${queryResult['rowUserIds'] != null}" style="width:70px;">操作</th>
                                     </tr>
                                     </thead>
                                     <tbody>
-                                    <tr th:each="item : ${queryResult['list']}">
-                                        <td th:each="header : ${queryResult['listHeaders']}">
+                                    <tr th:each="row,rowStat : ${queryResult['rows']}">
+                                        <td th:each="hdr,hdrStat : ${queryResult['listHeaders']}"
+                                            th:with="rowVal=${row[hdrStat.index]}">
                                             <!-- status 字段特殊渲染 -->
-                                            <th:block th:if="${header == 'status'}">
-                                                <span th:if="${item[header] == 2}" class="badge bg-success">成功</span>
-                                                <span th:if="${item[header] == 0}" class="badge bg-warning">待付</span>
-                                                <span th:if="${item[header] == -1}" class="badge bg-secondary">取消</span>
-                                                <span th:if="${item[header] != 2 and item[header] != 0 and item[header] != -1}"
-                                                      th:text="${item[header]}">?</span>
+                                            <th:block th:if="${hdr == 'status'}">
+                                                <span th:if="${rowVal == 2}" class="badge bg-success">成功</span>
+                                                <span th:if="${rowVal == 0}" class="badge bg-warning">待付</span>
+                                                <span th:if="${rowVal == -1}" class="badge bg-secondary">取消</span>
+                                                <span th:if="${rowVal != null and rowVal != 2 and rowVal != 0 and rowVal != -1}"
+                                                      th:text="${rowVal}">?</span>
                                             </th:block>
                                             <!-- 普通字段直接显示 -->
-                                            <th:block th:if="${header != 'status'}">
-                                                <span th:if="${item[header] != null}" th:text="${item[header]}"></span>
-                                                <span th:if="${item[header] == null}" class="text-muted">-</span>
+                                            <th:block th:if="${hdr != 'status'}">
+                                                <span th:if="${rowVal != null and rowVal != ''}" th:text="${rowVal}"></span>
+                                                <span th:if="${rowVal == null or rowVal == ''}" class="text-muted">-</span>
                                             </th:block>
+                                        </td>
+                                        <!-- 操作列：发私信按钮 -->
+                                        <td th:if="${queryResult['rowUserIds'] != null}" style="white-space:nowrap;">
+                                            <button th:if="${queryResult['rowUserIds'][rowStat.index] != ''}"
+                                                    class="btn btn-outline-primary btn-sm py-0 px-1"
+                                                    style="font-size:.7rem;"
+                                                    th:attr="data-userid=${queryResult['rowUserIds'][rowStat.index]},data-username=${queryResult['rowUserNames'][rowStat.index]}"
+                                                    onclick="openMsgModal(this.dataset.userid, this.dataset.username)">
+                                                <i class="bi bi-chat-dots"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                     </tbody>
@@ -487,8 +519,51 @@ function verify(body, signature, secret) {
                             </div>
                         </div>
 
-                        <!-- 单个数据展示 (方案详情等) -->
-                        <div th:if="${queryResult['data'] != null}" class="small">
+                        <!-- 方案详情表格 -->
+                        <div th:if="${queryType == 'plan' and queryResult['planTables']}">
+                            <!-- 属性/值 表格 -->
+                            <div class="table-responsive mb-2" style="max-height:400px; overflow-y:auto;">
+                                <table class="table table-sm small">
+                                    <thead class="table-light">
+                                    <tr>
+                                        <th style="width:35%; white-space:nowrap;"
+                                            th:text="${queryResult['planKvTable']['headers'][0]}">属性</th>
+                                        <th th:text="${queryResult['planKvTable']['headers'][1]}">值</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <tr th:each="row : ${queryResult['planKvTable']['rows']}">
+                                        <td class="fw-bold text-nowrap" th:text="${row[0]}"></td>
+                                        <td style="word-break:break-all;" th:text="${row[1]}"></td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- 子表格 (sku_list 等) -->
+                            <div th:each="sub : ${queryResult['planSubTables']}" class="mt-3">
+                                <h6 class="small fw-bold mb-1" th:text="${sub['title']}"></h6>
+                                <div class="table-responsive" style="max-height:300px; overflow-y:auto;">
+                                    <table class="table table-sm small">
+                                        <thead class="table-light">
+                                        <tr>
+                                            <th th:each="h : ${sub['headers']}" th:text="${h}"
+                                                style="white-space:nowrap;"></th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        <tr th:each="row,rowStat : ${sub['rows']}">
+                                            <td th:each="cell,cellStat : ${sub['headers']}"
+                                                th:text="${row[cellStat.index]}"
+                                                style="word-break:break-all; max-width:200px;"></td>
+                                        </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 单个数据展示 (非方案的其他单对象) -->
+                        <div th:if="${queryResult['data'] != null and queryType != 'plan'}" class="small">
                             <pre class="bg-light p-2 rounded" style="max-height:400px; overflow-y:auto;"><code
                                     th:text="${queryResult['data']}"></code></pre>
                         </div>
@@ -504,6 +579,48 @@ function verify(body, signature, secret) {
             </div>
         </div>
     </div>
+
+    <!-- 发私信弹窗 -->
+    <div class="modal fade" id="msgModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" th:action="@{${basePath} + '/tools/send-msg'}">
+                    <input type="hidden" th:name="${_csrf?.parameterName}" th:value="${_csrf?.token}"/>
+                    <div class="modal-header py-2">
+                        <h6 class="modal-title"><i class="bi bi-chat-dots me-1"></i>发送私信给 <span id="msgUserName" class="text-primary"></span></h6>
+                        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="recipient" id="msgRecipient">
+                        <div class="mb-2">
+                            <span class="small text-muted">用户 ID: </span>
+                            <code id="msgUserId" class="small text-muted"></code>
+                        </div>
+                        <div class="mb-0">
+                            <label for="msgContent" class="form-label small mb-1">私信内容</label>
+                            <textarea name="content" id="msgContent" class="form-control form-control-sm" rows="4"
+                                      placeholder="请输入私信内容..." required></textarea>
+                        </div>
+                        <small class="text-muted">爱发电限制: 10次/秒 或 1000次/小时</small>
+                    </div>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-send"></i> 发送</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script th:inline="javascript">
+        function openMsgModal(userId, userName) {
+            document.getElementById('msgRecipient').value = userId;
+            document.getElementById('msgUserId').textContent = userId;
+            document.getElementById('msgUserName').textContent = userName || '未知用户';
+            document.getElementById('msgContent').value = '';
+            new bootstrap.Modal(document.getElementById('msgModal')).show();
+        }
+    </script>
 </div>
 </body>
 </html>

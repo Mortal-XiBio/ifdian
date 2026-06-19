@@ -14,6 +14,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
@@ -36,6 +37,9 @@ public class AdminSecurityConfig {
     @Value("${ifdain.webhook-path:/webhook/ifdian}")
     private String webhookPath;
 
+    @Value("${spring.h2.console.enabled:false}")
+    private boolean h2ConsoleEnabled;
+
     /**
      * Webhook 端点安全配置 — 无需认证、无需 CSRF
      */
@@ -45,7 +49,7 @@ public class AdminSecurityConfig {
         http
             .antMatcher(webhookPath + "/**")
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .csrf(csrf -> csrf.disable())
+            .csrf(AbstractHttpConfigurer::disable)
             .headers(headers -> headers.frameOptions().sameOrigin());
         return http.build();
     }
@@ -59,7 +63,7 @@ public class AdminSecurityConfig {
         http
             .antMatcher("/api/external/**")
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .csrf(csrf -> csrf.disable());
+            .csrf(AbstractHttpConfigurer::disable);
         return http.build();
     }
 
@@ -76,21 +80,21 @@ public class AdminSecurityConfig {
             .requestMatchers(matchers -> matchers
                 .antMatchers(basePath + "/**", "/login", "/css/**", "/js/**")
             )
-            .authorizeHttpRequests(auth -> auth
-                // 静态资源、登录页、安装向导放行
-                .antMatchers(
+            .authorizeHttpRequests(auth -> {
+                auth.antMatchers(
                     basePath + "/login",
                     basePath + "/setup",
                     basePath + "/setup/**",
                     basePath + "/test/**",
                     "/css/**",
                     "/js/**"
-                ).permitAll()
-                // H2 控制台 (embedded 模式开发用)
-                .requestMatchers(PathRequest.toH2Console()).permitAll()
-                // 其余所有请求需认证
-                .anyRequest().authenticated()
-            )
+                ).permitAll();
+                // H2 控制台仅在启用时放行
+                if (h2ConsoleEnabled) {
+                    auth.requestMatchers(PathRequest.toH2Console()).permitAll();
+                }
+                auth.anyRequest().authenticated();
+            })
             // 表单登录
             .formLogin(form -> form
                 .loginPage(basePath + "/login")
@@ -105,15 +109,18 @@ public class AdminSecurityConfig {
                 .clearAuthentication(true)
                 .permitAll()
             )
-            // CSRF: H2 控制台、管理后台内部操作、外部 API 免 CSRF
+            // CSRF: 管理后台内部操作、外部 API 免 CSRF
             // 管理后台已有表单登录保护，CSRF 对内部端点的额外安全价值有限
-            .csrf(csrf -> csrf
-                .ignoringRequestMatchers(PathRequest.toH2Console())
-                .ignoringAntMatchers(
+            .csrf(csrf -> {
+                csrf.ignoringAntMatchers(
                     basePath + "/**",
                     "/api/external/**"
-                )
-            )
+                );
+                // H2 控制台仅在启用时免 CSRF
+                if (h2ConsoleEnabled) {
+                    csrf.ignoringRequestMatchers(PathRequest.toH2Console());
+                }
+            })
             // 允许 H2 控制台在 frame 中显示
             .headers(headers -> headers
                 .frameOptions().sameOrigin()

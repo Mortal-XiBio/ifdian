@@ -47,3 +47,7 @@ application-local.properties
 # --- Temp ---
 *.tmp
 *.bak
+
+# --- Distribution package ---
+dist/*/lib/*.jar
+*.tar.gz

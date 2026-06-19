@@ -13,6 +13,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,6 +38,60 @@ public class ToolsController {
     private final AdminProperties adminProperties;
     private final SystemConfigService configService;
     private final ObjectMapper objectMapper;
+
+    private static final Map<String, String> FIELD_LABELS = Map.ofEntries(
+            Map.entry("out_trade_no", "订单号"),
+            Map.entry("custom_order_id", "自定义订单ID"),
+            Map.entry("user_id", "用户ID"),
+            Map.entry("user_private_id", "用户ID"),
+            Map.entry("user", "赞助者"),
+            Map.entry("sponsor_plans", "赞助方案"),
+            Map.entry("current_plan", "当前方案"),
+            Map.entry("all_sum_amount", "累计金额"),
+            Map.entry("show_amount", "单价"),
+            Map.entry("first_pay_time", "首次赞助"),
+            Map.entry("last_pay_time", "最近赞助"),
+            Map.entry("last_pay_amount", "最近金额"),
+            Map.entry("plan_id", "方案ID"),
+            Map.entry("plan_title", "方案名称"),
+            Map.entry("total_amount", "订单金额"),
+            Map.entry("status", "状态"),
+            Map.entry("remark", "备注"),
+            Map.entry("redeem_id", "兑换ID"),
+            Map.entry("discount", "减免"),
+            Map.entry("create_time", "创建时间"),
+            Map.entry("pay_time", "支付时间"),
+            Map.entry("product_type", "类型"),
+            Map.entry("name", "名称"),
+            Map.entry("price", "价格"),
+            Map.entry("desc", "描述"),
+            Map.entry("email", "邮箱"),
+            Map.entry("method", "支付方式"),
+            Map.entry("transaction_id", "交易号"),
+            Map.entry("address_person", "收件人"),
+            Map.entry("address_phone", "收件电话"),
+            Map.entry("address_address", "收件地址"),
+            Map.entry("expire_time", "到期时间"),
+            Map.entry("sku_detail", "SKU详情"),
+            Map.entry("sku_id", "SKU ID"),
+            Map.entry("month", "购买月数"),
+            Map.entry("pay_month", "付费月数"),
+            Map.entry("show_aff", "展示推荐"),
+            Map.entry("exchange_rate", "汇率"),
+            Map.entry("stock", "库存"),
+            Map.entry("count", "数量"),
+            Map.entry("pic", "图片"),
+            Map.entry("avatar", "头像"),
+            Map.entry("internal_info", "内部信息"),
+            Map.entry("independent", "独立方案"),
+            Map.entry("permanent", "永久方案"),
+            Map.entry("reply_content", "自动回复"),
+            Map.entry("replay_random_content", "随机回复")
+    );
+
+    private String displayName(String fieldName) {
+        return FIELD_LABELS.getOrDefault(fieldName, fieldName);
+    }
 
     /**
      * API 工具主页
@@ -100,7 +158,9 @@ public class ToolsController {
         model.addAttribute("apiConfigured", isApiConfigured());
 
         JsonNode result = apiClient.queryPlan(planId);
-        model.addAttribute("queryResult", formatResult(result));
+        Map<String, Object> formatted = formatResult(result);
+        formatPlanAsTables(formatted, result);
+        model.addAttribute("queryResult", formatted);
         model.addAttribute("queryType", "plan");
         model.addAttribute("formPlanId", planId);
         return "admin/tools";
@@ -246,6 +306,7 @@ public class ToolsController {
         model.addAttribute("apiConfigured", isApiConfigured());
 
         List<Map<String, String>> plans = apiClient.discoverPlans(maxPages, perPage);
+        log.info("[Ifdain] discover-plans: found {} plans: {}", plans.size(), plans);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("error", false);
@@ -296,7 +357,7 @@ public class ToolsController {
                 for (JsonNode item : listNode) {
                     try {
                         Map<String, Object> itemMap = objectMapper.convertValue(item,
-                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                                new com.fasterxml.jackson.core.type.TypeReference<>() {});
                         list.add(itemMap);
                         // 以第一个元素的 key 作为表头（保留顺序）
                         if (headers.isEmpty()) {
@@ -314,6 +375,48 @@ public class ToolsController {
             }
             map.put("list", list);
             map.put("listHeaders", headers);
+
+            // 生成 rows (List<List<Object>>), 模板用 row[rowIdx] 索引访问
+            // 避免 SpEL 中 item[header] 变量键访问可能失效的问题
+            List<List<Object>> rows = new ArrayList<>();
+            for (Map<String, Object> itemMap : list) {
+                List<Object> row = new ArrayList<>();
+                for (String h : headers) {
+                    Object val = itemMap.get(h);
+                    if (val != null && h.endsWith("_time") && val instanceof Number) {
+                        val = formatTimestamp(((Number) val).longValue());
+                    }
+                    row.add(val != null ? toReadableString(val) : "");
+                }
+                rows.add(row);
+            }
+            map.put("rows", rows);
+
+            // 中文表头
+            List<String> displayHeaders = new ArrayList<>();
+            for (String h : headers) {
+                displayHeaders.add(displayName(h));
+            }
+            map.put("displayHeaders", displayHeaders);
+
+            // 提取每行的 user_id 和 user_name (赞助者表格用于发私信按钮)
+            List<String> rowUserIds = new ArrayList<>();
+            List<String> rowUserNames = new ArrayList<>();
+            for (Map<String, Object> itemMap : list) {
+                Object userObj = itemMap.get("user");
+                if (userObj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> userMap = (Map<String, Object>) userObj;
+                    rowUserIds.add(String.valueOf(userMap.getOrDefault("user_id", "")));
+                    rowUserNames.add(String.valueOf(userMap.getOrDefault("name", "")));
+                } else {
+                    rowUserIds.add("");
+                    rowUserNames.add("");
+                }
+            }
+            map.put("rowUserIds", rowUserIds);
+            map.put("rowUserNames", rowUserNames);
+
             log.info("[Ifdain] formatResult: list.size={}, total_count={}, headers={}",
                     list.size(), map.get("total_count"), headers);
         } else if (data.isObject() || data.isArray()) {
@@ -329,5 +432,171 @@ public class ToolsController {
         // JSON 原文（用于调试）
         map.put("rawJson", result.toPrettyString());
         return map;
+    }
+
+    /**
+     * 将 Unix 时间戳(秒)转换为可读日期字符串
+     */
+    private String formatTimestamp(long epochSecond) {
+        if (epochSecond <= 0) return "";
+        return LocalDateTime.ofInstant(Instant.ofEpochSecond(epochSecond), ZoneId.of("Asia/Shanghai"))
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+    }
+
+    /**
+     * 将嵌套对象/数组转为表格可读字符串
+     *
+     * <ul>
+     *   <li>基本类型 → 直接 toString</li>
+     *   <li>Map 含 name → 取 name (如 user, plan)</li>
+     *   <li>Map 含 user_id 但无 name → user_id 前8位</li>
+     *   <li>List&lt;Map&gt; → 逗号分隔各元素的 name</li>
+     *   <li>其他复杂对象 → 紧凑 JSON (截断80字符)</li>
+     * </ul>
+     */
+    @SuppressWarnings("unchecked")
+    private String toReadableString(Object val) {
+        if (val == null) return "";
+        if (val instanceof String || val instanceof Number || val instanceof Boolean) {
+            String s = val.toString();
+            return s.length() > 100 ? s.substring(0, 97) + "..." : s;
+        }
+        if (val instanceof Map) {
+            Map<String, Object> m = (Map<String, Object>) val;
+            // user 对象: 优先取 name
+            if (m.containsKey("name")) {
+                String name = String.valueOf(m.get("name"));
+                if (!name.isEmpty()) return name;
+            }
+            // 有 user_id 但无 name
+            if (m.containsKey("user_id")) {
+                String uid = String.valueOf(m.get("user_id"));
+                return uid.length() > 8 ? uid.substring(0, 8) + "…" : uid;
+            }
+            // 兜底: 紧凑 JSON
+            try {
+                String json = objectMapper.writeValueAsString(val);
+                return json.length() > 80 ? json.substring(0, 77) + "..." : json;
+            } catch (Exception e) {
+                return val.toString();
+            }
+        }
+        if (val instanceof List<?> list) {
+            if (list.isEmpty()) return "";
+            if (list.getFirst() instanceof Map) {
+                // 方案/对象列表: 显示数量而非展开全部对象
+                return list.size() + "个方案";
+            }
+            return list.toString();
+        }
+        return val.toString();
+    }
+
+    /**
+     * 将方案详情的 API 响应解析为结构化表格数据
+     *
+     * <p>顶层简单字段 → kvTable (属性/值 两列表格);
+     * 嵌套数组字段 → subTables (各数组独立表格, 如 sku_list)。</p>
+     */
+    private void formatPlanAsTables(Map<String, Object> formatted, JsonNode rawResult) {
+        if (rawResult == null) return;
+        JsonNode data = rawResult.path("data");
+        if (data.isTextual()) {
+            try {
+                data = objectMapper.readTree(data.asText());
+            } catch (Exception e) {
+                return;
+            }
+        }
+        if (!data.isObject()) return;
+
+        // 解包: 如果 data 只有一个 key 且其值是对象(非数组), 则进入该对象
+        // 例如 {"plan": {...}} → 直接使用内层 {...}
+        JsonNode planData = data;
+        if (planData.size() == 1) {
+            JsonNode inner = planData.iterator().next();
+            if (inner.isObject() && !inner.isArray()) {
+                planData = inner;
+            }
+        }
+
+        // 顶层 kv 表
+        List<String> kvHeaders = List.of("属性", "值");
+        List<List<String>> kvRows = new ArrayList<>();
+        List<Map<String, Object>> subTables = new ArrayList<>();
+
+        java.util.Iterator<Map.Entry<String, JsonNode>> fields = planData.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            String key = entry.getKey();
+            JsonNode value = entry.getValue();
+            if (value.isArray() && !value.isEmpty() && value.get(0).isObject()) {
+                // 嵌套数组 → 独立子表格
+                List<String> subHeaders = new ArrayList<>();
+                // 第一遍: 收集所有列名
+                for (JsonNode item : value) {
+                    item.fieldNames().forEachRemaining(fname -> {
+                        if (!subHeaders.contains(fname)) {
+                            subHeaders.add(fname);
+                        }
+                    });
+                }
+                // 第二遍: 按统一列顺序填充每行
+                List<List<String>> alignedRows = new ArrayList<>();
+                for (JsonNode item : value) {
+                    List<String> row = new ArrayList<>();
+                    for (String h : subHeaders) {
+                        JsonNode v = item.get(h);
+                        if (v == null || v.isNull()) {
+                            row.add("");
+                        } else if (h.endsWith("_time") && v.isNumber()) {
+                            row.add(formatTimestamp(v.asLong()));
+                        } else {
+                            row.add(v.isValueNode() ? v.asText() : v.toString());
+                        }
+                    }
+                    alignedRows.add(row);
+                }
+                // 子表格表头翻译为中文
+                List<String> displaySubHeaders = new ArrayList<>();
+                for (String h : subHeaders) {
+                    displaySubHeaders.add(displayName(h));
+                }
+                Map<String, Object> subTable = new LinkedHashMap<>();
+                subTable.put("title", displayName(key));
+                subTable.put("headers", displaySubHeaders);
+                subTable.put("rows", alignedRows);
+                subTables.add(subTable);
+
+                // kv 表中仅显示数量摘要
+                kvRows.add(List.of(displayName(key), value.size() + "条记录"));
+            } else if (value.isObject()) {
+                // 嵌套对象: 展开为多行 key-value
+                value.fields().forEachRemaining(f -> {
+                    String subKey = key + "." + f.getKey();
+                    String displayVal = f.getValue().isValueNode() ? f.getValue().asText() : f.getValue().toString();
+                    if (displayVal.length() > 200) displayVal = displayVal.substring(0, 197) + "...";
+                    kvRows.add(List.of(displayName(subKey), displayVal));
+                });
+            } else {
+                // 简单值字段
+                String displayVal;
+                if (key.endsWith("_time") && value.isNumber()) {
+                    displayVal = formatTimestamp(value.asLong());
+                } else {
+                    displayVal = value.isValueNode() ? value.asText() : value.toString();
+                }
+                if (displayVal.length() > 200) displayVal = displayVal.substring(0, 197) + "...";
+                kvRows.add(List.of(displayName(key), displayVal));
+            }
+        }
+
+        Map<String, Object> kvTable = new LinkedHashMap<>();
+        kvTable.put("headers", kvHeaders);
+        kvTable.put("rows", kvRows);
+
+        formatted.put("planTables", true);
+        formatted.put("planKvTable", kvTable);
+        formatted.put("planSubTables", subTables);
     }
 }
