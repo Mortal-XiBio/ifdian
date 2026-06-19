@@ -7,14 +7,19 @@
 <body>
 <div th:fragment="content" class="tools-page">
     <style>
-        /* 桌面端: API 响应卡片固定不随滚动 */
+        /* 桌面端: API 响应卡片固定在视口中，不随滚动移动 */
         @media (min-width: 992px) {
             .sticky-result-col {
-                position: sticky;
-                top: 0;
+                position: fixed;
+                /* 左侧: 220px sidebar + 50% of remaining (main-content area) + half gutter */
+                left: calc(220px + (100vw - 220px) * 0.5 + 0.75rem);
+                top: 0.75rem;
+                /* 宽度: 50% of remaining - padding */
+                width: calc((100vw - 220px) * 0.5 - 2.5rem);
+                z-index: 10;
             }
             .sticky-result-col > .card {
-                max-height: calc(100vh - 4rem);
+                max-height: calc(100vh - 3.5rem);
                 display: flex;
                 flex-direction: column;
             }
