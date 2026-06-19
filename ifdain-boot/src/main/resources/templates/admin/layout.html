@@ -127,10 +127,13 @@
         <div class="main-body">
             <div th:replace="${content}">content</div>
         </div>
-        <div class="main-footer">Ifdain 爱发电支付集成</div>
+        <div class="main-footer">Ifdain v2.1.0.4bate &middot; &copy; MortalT工作室 &middot; <span id="_fe"></span></div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script th:inline="javascript">
+(function(){var el=document.getElementById('_fe');if(!el)return;var addr=/*[[${footerEmail}]]*/'';el.innerHTML='<a href="mai'+'lto:'+addr+'" style="color:inherit;text-decoration:none">'+addr+'</a>';})();
+</script>
 </body>
 </html>

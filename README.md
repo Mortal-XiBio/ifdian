@@ -41,7 +41,7 @@
 <dependency>
     <groupId>com.ifdain</groupId>
     <artifactId>ifdain-core</artifactId>
-    <version>1.0.0</version>
+    <version>2.1.0.4bate</version>
 </dependency>
 
 <!-- 如果使用 standalone 模式，还需引入 MySQL 驱动 -->
@@ -55,7 +55,7 @@
 **Gradle：**
 
 ```groovy
-implementation 'com.ifdain:ifdain-core:1.0.0'
+implementation 'com.ifdain:ifdain-core:2.1.0.4bate'
 ```
 
 ### 2. 配置参数
@@ -466,10 +466,10 @@ mvn test
 mvn clean package -pl ifdain-boot
 
 # 运行（embedded 模式）
-java -jar ifdain-boot/target/ifdain-boot-1.0.0.jar
+java -jar ifdain-boot/target/ifdain-boot-2.1.0.4bate.jar
 
 # standalone 模式运行
-java -jar ifdain-boot/target/ifdain-boot-1.0.0.jar --spring.profiles.active=standalone
+java -jar ifdain-boot/target/ifdain-boot-2.1.0.4bate.jar --spring.profiles.active=standalone
 ```
 
 ### 环境要求

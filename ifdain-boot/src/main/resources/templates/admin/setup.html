@@ -187,7 +187,7 @@
             </div>
         </div>
     </div>
-    <div class="footer-text">Ifdain 爱发电支付集成</div>
+    <div class="footer-text">Ifdain v2.1.0.4bate &middot; &copy; MortalT工作室 &middot; <span id="_fe"></span></div>
 </div>
 <script>
     function csrfHeader(){var el=document.querySelector('input[name="_csrf"]');return el?el.value:'';}
@@ -260,6 +260,9 @@
             div.innerHTML=d.success?'<span class="text-success"><i class="bi bi-check-circle"></i> '+d.message+'</span>':'<span class="text-danger"><i class="bi bi-x-circle"></i> '+d.message+'</span>';
         }catch(e){div.innerHTML='<span class="text-danger"><i class="bi bi-x-circle"></i> 请求失败: '+e+'</span>';}
     }
+</script>
+<script th:inline="javascript">
+(function(){var el=document.getElementById('_fe');if(!el)return;var addr=/*[[${footerEmail}]]*/'';el.innerHTML='<a href="mai'+'lto:'+addr+'" style="color:inherit;text-decoration:none">'+addr+'</a>';})();
 </script>
 </body>
 </html>
