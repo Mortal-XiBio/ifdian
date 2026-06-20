@@ -30,6 +30,40 @@
 - **自动配置** — Spring Boot Auto-Configuration，引入即用
 
 ---
+## Linux 快速开始
+
+### 1. 下载
+
+访问下载页面获取安装包：
+
+```
+https://clud.www.mortaltom.online/#s/EDTitQUP
+```
+
+### 2. 上传服务器并解压
+
+```bash
+tar -xzf ifdian.tar.gz
+cd ifdian
+```
+
+### 3. 安装
+
+自动检测环境、安装依赖、注册 systemd 服务并启动：
+
+```bash
+sudo bash install.sh
+```
+
+### 4. 访问管理后台
+
+启动后访问：
+
+```
+http://服务器IP:8888/admin
+```
+
+默认密码：`admin`（首次访问会进入安装向导强制修改）
 
 ## 快速开始
 
