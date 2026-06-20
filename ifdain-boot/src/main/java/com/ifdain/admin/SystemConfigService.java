@@ -151,4 +151,8 @@ public class SystemConfigService {
 
     // 浏览器自动化配置键
     public static final String KEY_AFDIAN_COOKIE = "ifdain.afdian_cookie";
+
+    // 自动回复配置键
+    public static final String KEY_AUTO_REPLY_ENABLED = "ifdain.auto_reply_enabled";
+    public static final String KEY_AUTO_REPLY_DEFAULT = "ifdain.auto_reply_default";
 }

@@ -152,6 +152,30 @@
             </div>
         </div>
 
+        <!-- 自动回复 -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0"><i class="bi bi-reply me-1"></i>订单自动回复</h5></div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                    <input type="hidden" name="autoReplyEnabled" value="false">
+                    <input class="form-check-input" type="checkbox" name="autoReplyEnabled" value="true" id="autoReplySwitch"
+                           th:checked="${autoReplyEnabled}">
+                    <label class="form-check-label" for="autoReplySwitch">启用自动回复</label>
+                    <div class="form-text">收到订单后自动向用户发送私信回复。</div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="autoReplyDefault">默认回复消息</label>
+                    <textarea name="autoReplyDefault" id="autoReplyDefault" class="form-control" rows="2"
+                              th:text="${autoReplyDefault}" placeholder="感谢支持"></textarea>
+                    <div class="form-text">
+                        未设置方案专属预设时使用此消息。留空则使用内置默认值"感谢支持"。<br>
+                        <i class="bi bi-info-circle"></i>
+                        方案专属预设通过配置键 <code>ifdain.auto_reply.plan.{planId}</code> 设置。
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 数据库状态 -->
         <div class="card mb-3">
             <div class="card-header"><h5 class="mb-0"><i class="bi bi-server me-1"></i>数据库状态</h5></div>

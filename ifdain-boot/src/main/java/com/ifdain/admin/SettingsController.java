@@ -73,6 +73,10 @@ public class SettingsController {
         String cookieVal = configService.getOrDefault(BrowserAutomationService.KEY_AFDIAN_COOKIE, "");
         model.addAttribute("afdianCookieConfigured", !cookieVal.isBlank());
 
+        // 自动回复配置
+        model.addAttribute("autoReplyEnabled", "true".equals(configService.getOrDefault(SystemConfigService.KEY_AUTO_REPLY_ENABLED, "true")));
+        model.addAttribute("autoReplyDefault", configService.getOrDefault(SystemConfigService.KEY_AUTO_REPLY_DEFAULT, "感谢支持"));
+
         // 数据库状态
         model.addAttribute("dbMode", databaseInitializer.getDbMode());
         model.addAttribute("dbProduct", databaseInitializer.getDbProductName());
@@ -103,6 +107,8 @@ public class SettingsController {
                                @RequestParam(required = false) String callbackMaxRetries,
                                @RequestParam(required = false) String callbackTimeoutMs,
                                @RequestParam(required = false) String afdianCookie,
+                               @RequestParam(required = false) String autoReplyEnabled,
+                               @RequestParam(required = false) String autoReplyDefault,
                                RedirectAttributes attr) {
 
         if (userId != null) {
@@ -163,6 +169,13 @@ public class SettingsController {
         if (afdianCookie != null && !afdianCookie.isBlank()) {
             configService.set(BrowserAutomationService.KEY_AFDIAN_COOKIE, afdianCookie,
                     "爱发电登录 Cookie (JSON 数组，用于浏览器自动化)");
+        }
+
+        // 自动回复配置
+        configService.set(SystemConfigService.KEY_AUTO_REPLY_ENABLED,
+                autoReplyEnabled != null ? autoReplyEnabled : "false", "是否启用订单自动回复");
+        if (autoReplyDefault != null) {
+            configService.set(SystemConfigService.KEY_AUTO_REPLY_DEFAULT, autoReplyDefault, "订单自动回复默认消息");
         }
 
         attr.addFlashAttribute("success", "设置已保存");
