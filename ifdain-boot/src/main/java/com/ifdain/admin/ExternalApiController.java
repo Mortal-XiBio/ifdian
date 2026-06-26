@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -86,8 +88,7 @@ public class ExternalApiController {
         if (userId != null) {
             orders = orderRepository.findByUserId(userId);
         } else {
-            // 按 userPrivateId 查询需新增 repository 方法
-            orders = orderRepository.findByUserId(userPrivateId);
+            orders = orderRepository.findByUserPrivateId(userPrivateId);
         }
 
         // 过滤已支付订单
@@ -327,6 +328,19 @@ public class ExternalApiController {
             return error(400, "userId, planId, customOrderId, callbackUrl are all required");
         }
 
+        // 验证 plan_id 在爱发电平台真实存在
+        JsonNode planResult = apiClient.queryPlan(planId);
+        if (planResult == null) {
+            return error(502, "无法连接爱发电平台验证方案，请检查 API 配置（user_id / api_token）");
+        }
+        int planEc = planResult.path("ec").asInt();
+        if (planEc != 200) {
+            String planEm = planResult.path("em").asText("该方案不存在或已下架");
+            log.warn("[Ifdain] Payment request rejected: invalid plan_id={}, ec={}, em={}",
+                    planId, planEc, planEm);
+            return error(400, "plan_id 无效: " + planEm + " (plan_id=" + planId + ")");
+        }
+
         // 检查 customOrderId 唯一性
         if (paymentRequestRepository.existsByCustomOrderId(customOrderId)) {
             return error(400, "customOrderId already exists: " + customOrderId);
@@ -347,6 +361,22 @@ public class ExternalApiController {
         }
         String remark = (String) body.get("remark");
 
+        // 解析购买月数（默认1个月）和商品类型（默认0=订阅）
+        Integer month = 1;
+        Object monthObj = body.get("month");
+        if (monthObj instanceof Number) {
+            month = ((Number) monthObj).intValue();
+        } else if (monthObj != null) {
+            try { month = Integer.parseInt(monthObj.toString()); } catch (NumberFormatException ignored) {}
+        }
+        Integer productType = 0;
+        Object ptObj = body.get("productType");
+        if (ptObj instanceof Number) {
+            productType = ((Number) ptObj).intValue();
+        } else if (ptObj != null) {
+            try { productType = Integer.parseInt(ptObj.toString()); } catch (NumberFormatException ignored) {}
+        }
+
         // 生成签名密钥
         String secret = callbackService.generateSecret();
 
@@ -365,12 +395,21 @@ public class ExternalApiController {
 
         paymentRequestRepository.save(pr);
 
-        log.info("[Ifdain] Payment request created: requestId={}, customOrderId={}, planId={}",
-                pr.getRequestId(), customOrderId, planId);
+        log.info("[Ifdain] Payment request created: requestId={}, customOrderId={}, planId={}, month={}, productType={}",
+                pr.getRequestId(), customOrderId, planId, month, productType);
 
-        // 构建响应
+        // 构建支付链接：爱发电正确格式 /order/create?plan_id=xxx&product_type=0&month=1&...
         String apiBaseUrl = configService.getOrDefault(SystemConfigService.KEY_API_BASE_URL, "https://ifdian.net");
-        String paymentUrl = apiBaseUrl + "/order?plan_id=" + planId;
+        StringBuilder paymentUrl = new StringBuilder(apiBaseUrl)
+                .append("/order/create?plan_id=").append(planId)
+                .append("&product_type=").append(productType)
+                .append("&month=").append(month);
+        if (customOrderId != null && !customOrderId.isBlank()) {
+            paymentUrl.append("&custom_order_id=").append(URLEncoder.encode(customOrderId, StandardCharsets.UTF_8));
+        }
+        if (remark != null && !remark.isBlank()) {
+            paymentUrl.append("&remark=").append(URLEncoder.encode(remark, StandardCharsets.UTF_8));
+        }
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("requestId", pr.getRequestId());

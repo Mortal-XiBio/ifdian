@@ -82,9 +82,15 @@ public class ConnectionTestController {
         Map<String, Object> result = new HashMap<>();
 
         try {
+            // 清理 host：去空格和尾部斜杠
+            String cleanHost = host.trim();
+            while (cleanHost.endsWith("/")) {
+                cleanHost = cleanHost.substring(0, cleanHost.length() - 1);
+            }
+
             // 使用 Lettuce 客户端测试连接
             io.lettuce.core.RedisURI uri = io.lettuce.core.RedisURI.builder()
-                    .withHost(host)
+                    .withHost(cleanHost)
                     .withPort(port)
                     .withDatabase(database)
                     .build();

@@ -34,6 +34,7 @@ import java.util.Map;
 public class ToolsController {
 
     private final AfdianApiClient apiClient;
+    private final CachedApiService cachedApi;
     private final IfdianWebhookService webhookService;
     private final AdminProperties adminProperties;
     private final SystemConfigService configService;
@@ -157,7 +158,7 @@ public class ToolsController {
         model.addAttribute("basePath", adminProperties.getBasePath());
         model.addAttribute("apiConfigured", isApiConfigured());
 
-        JsonNode result = apiClient.queryPlan(planId);
+        JsonNode result = cachedApi.queryPlan(planId);
         Map<String, Object> formatted = formatResult(result);
         formatPlanAsTables(formatted, result);
         model.addAttribute("queryResult", formatted);
@@ -305,7 +306,7 @@ public class ToolsController {
         model.addAttribute("basePath", adminProperties.getBasePath());
         model.addAttribute("apiConfigured", isApiConfigured());
 
-        List<Map<String, String>> plans = apiClient.discoverPlans(maxPages, perPage);
+        List<Map<String, String>> plans = cachedApi.discoverPlans(maxPages, perPage);
         log.info("[Ifdain] discover-plans: found {} plans: {}", plans.size(), plans);
 
         Map<String, Object> result = new LinkedHashMap<>();

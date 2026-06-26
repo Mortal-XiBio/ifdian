@@ -5,9 +5,9 @@
 [![Maven](https://img.shields.io/badge/Maven-3.8%2B-orange)](https://maven.apache.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
-**Ifdain** 是一个面向 Java 生态的 [爱发电 (afdian.net)](https://ifdian.net) 支付集成库。
+**Ifdain** 是一个面向 Java 生态的 [爱发电 (afdian.net)](https://ifdian.net) 支付集成项目。
 
-作为 **Spring Boot Starter**，它提供了 Webhook 订单接收、API 客户端、对外 REST API、OAuth2 授权、管理后台等开箱即用的能力，只需引入依赖并简单配置即可快速接入爱发电支付通知与开放 API。
+基于 **Spring Boot** 构建，它提供了 Webhook 订单接收、API 客户端、对外 REST API、OAuth2 授权、管理后台等开箱即用的能力，克隆构建后即可快速接入爱发电支付通知与开放 API。
 
 ---
 
@@ -67,43 +67,47 @@ http://服务器IP:8888/admin
 
 ## 快速开始
 
-### 1. 引入依赖
+### 1. 克隆并构建
 
-**Maven：**
+```bash
+git clone https://github.com/Mortal-XiBio/ifdian.git
+cd ifdian
 
-```xml
-<dependency>
-    <groupId>com.ifdain</groupId>
-    <artifactId>ifdain-core</artifactId>
-    <version>2.1.1.0beta</version>
-</dependency>
-
-<!-- 如果使用 standalone 模式，还需引入 MySQL 驱动 -->
-<dependency>
-    <groupId>mysql</groupId>
-    <artifactId>mysql-connector-java</artifactId>
-    <version>8.0.33</version>
-</dependency>
+# 构建可运行的 JAR
+mvn clean package -DskipTests
 ```
 
-**Gradle：**
+### 2. 启动应用
 
-```groovy
-implementation 'com.ifdain:ifdain-core:2.1.1.0beta'
+```bash
+# embedded 模式（默认，H2 内存数据库，开箱即用）
+java -jar ifdain-boot/target/ifdain-boot-2.1.1.0beta.jar
+
+# standalone 模式（MySQL，需先配置数据库连接）
+java -jar ifdain-boot/target/ifdain-boot-2.1.1.0beta.jar --spring.profiles.active=standalone
 ```
 
-### 2. 配置参数
+启动后访问 `http://localhost:8888/admin` 进入安装向导，按步骤完成初始化配置。
 
-在 `application.yml` 中配置：
+默认密码：`admin`（首次访问会强制修改）
+
+### 3. 配置 Webhook
+
+在爱发电开发者后台将 **Webhook URL** 配置为：
+
+```
+https://你的域名/webhook/ifdian
+```
+
+### 4. 配置参数（可选）
+
+如需自定义配置，编辑 `application.yml` 或通过管理后台 → 系统设置页面进行配置：
 
 ```yaml
 ifdain:
-  # 开发者身份（必填，从爱发电开发者后台获取）
+  # 开发者身份（从爱发电开发者后台获取）
   user-id: your_user_id_here
   api-token: your_api_token_here
-
-  # 运行模式: embedded（默认） / standalone
-  mode: embedded
 
   # Webhook 配置
   webhook-path: /webhook/ifdian
@@ -116,37 +120,6 @@ ifdain:
   # API 配置
   api-base-url: https://ifdian.net
   api-timeout-ms: 10000
-
-  # 对外 API Key（第三方项目接入时使用）
-  external-api-key: your-secret-api-key
-
-  # OAuth2 配置（需向爱发电官方申请）
-  oauth2-client-id: your_client_id
-  oauth2-client-secret: your_client_secret
-
-  # 管理后台配置（仅 ifdain-boot 模块）
-  admin:
-    username: admin
-    password: admin           # ← 首次安装后将被替换，务必修改！
-    base-path: /admin
-```
-
-### 3. 启动应用
-
-```bash
-# embedded 模式（默认，H2 内存数据库，开箱即用）
-mvn spring-boot:run
-
-# standalone 模式（MySQL）
-mvn spring-boot:run -Dspring.profiles.active=standalone
-```
-
-启动后访问 `http://localhost:8888/admin` 进入安装向导，按步骤完成初始化配置。
-
-在爱发电开发者后台将 **Webhook URL** 配置为：
-
-```
-https://你的域名/webhook/ifdian
 ```
 
 ---
@@ -487,7 +460,7 @@ ifdain/
 
 ---
 
-## 构建
+## 开发构建
 
 ```bash
 # 编译全部模块
@@ -496,14 +469,8 @@ mvn clean compile
 # 运行测试
 mvn test
 
-# 构建可运行的 JAR
-mvn clean package -pl ifdain-boot
-
-# 运行（embedded 模式）
-java -jar ifdain-boot/target/ifdain-boot-2.1.1.0beta.jar
-
-# standalone 模式运行
-java -jar ifdain-boot/target/ifdain-boot-2.1.1.0beta.jar --spring.profiles.active=standalone
+# 构建可运行的 JAR（跳过测试）
+mvn clean package -DskipTests
 ```
 
 ### 环境要求

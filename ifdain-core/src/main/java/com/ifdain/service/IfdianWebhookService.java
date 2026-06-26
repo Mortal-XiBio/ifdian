@@ -13,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -99,15 +101,20 @@ public class IfdianWebhookService {
             log.info("[Ifdain] Webhook order saved. outTradeNo={}, amount={}, planId={}",
                     outTradeNo, order.getTotalAmount(), planId);
 
-            // 6. 调用业务处理器（自定义或默认）
-            invokeOrderProcessor(order);
-
-            // 7. 触发外部支付回调 (异步，不影响 Webhook 返回)
-            try {
-                callbackService.processPaymentCallback(order);
-            } catch (Exception e) {
-                log.error("[Ifdain] Callback processing threw unexpected error for order={}", outTradeNo, e);
-            }
+            // 6. 注册 post-commit 回调，避免在事务内执行外部 HTTP 调用
+            final IfdianOrder finalOrder = order;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    invokeOrderProcessor(finalOrder);
+                    try {
+                        callbackService.processPaymentCallback(finalOrder);
+                    } catch (Exception e) {
+                        log.error("[Ifdain] Callback processing threw unexpected error for order={}",
+                                finalOrder.getOutTradeNo(), e);
+                    }
+                }
+            });
 
             return WebhookResult.success("saved", false);
 

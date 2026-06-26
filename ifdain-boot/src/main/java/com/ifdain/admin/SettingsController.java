@@ -142,10 +142,15 @@ public class SettingsController {
             configService.set(SystemConfigService.KEY_REDIS_ENABLED, redisEnabled, "是否启用 Redis");
         }
         if (redisHost != null) {
-            configService.set(SystemConfigService.KEY_REDIS_HOST, redisHost, "Redis 主机地址");
+            String cleanHost = redisHost.trim();
+            // 去掉用户可能误输入的尾部斜杠，避免拼出 host/:port
+            while (cleanHost.endsWith("/")) {
+                cleanHost = cleanHost.substring(0, cleanHost.length() - 1);
+            }
+            configService.set(SystemConfigService.KEY_REDIS_HOST, cleanHost, "Redis 主机地址");
         }
         if (redisPort != null) {
-            configService.set(SystemConfigService.KEY_REDIS_PORT, redisPort, "Redis 端口");
+            configService.set(SystemConfigService.KEY_REDIS_PORT, redisPort.trim(), "Redis 端口");
         }
         if (redisPassword != null && !redisPassword.isEmpty()) {
             configService.set(SystemConfigService.KEY_REDIS_PASSWORD, redisPassword, "Redis 密码");

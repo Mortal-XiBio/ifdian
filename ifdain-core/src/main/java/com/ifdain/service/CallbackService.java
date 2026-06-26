@@ -6,6 +6,7 @@ import com.ifdain.config.IfdainProperties;
 import com.ifdain.entity.IfdianOrder;
 import com.ifdain.entity.PaymentRequest;
 import com.ifdain.entity.PaymentRequestStatus;
+import com.ifdain.repository.IfdianOrderRepository;
 import com.ifdain.repository.PaymentRequestRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +50,7 @@ import java.util.Optional;
 public class CallbackService {
 
     private final PaymentRequestRepository paymentRequestRepository;
+    private final IfdianOrderRepository orderRepository;
     private final IfdainProperties properties;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
@@ -112,7 +114,13 @@ public class CallbackService {
         }
         // 重置重试计数，给予新的重试机会
         pr.setCallbackRetryCount(0);
-        return executeCallback(pr);
+
+        // 查找关联的实际订单，用于回调中传递真实月数和金额
+        IfdianOrder order = null;
+        if (pr.getOutTradeNo() != null) {
+            order = orderRepository.findByOutTradeNo(pr.getOutTradeNo()).orElse(null);
+        }
+        return executeCallback(pr, order);
     }
 
     /**
@@ -160,7 +168,7 @@ public class CallbackService {
     public void doCallback(PaymentRequest pr, IfdianOrder order) {
         // 重置重试计数（首次回调）
         pr.setCallbackRetryCount(0);
-        boolean success = executeCallback(pr);
+        boolean success = executeCallback(pr, order);
         if (!success) {
             log.warn("[Ifdain] Callback failed after all retries: requestId={}, callbackUrl={}",
                     pr.getRequestId(), pr.getCallbackUrl());
@@ -172,10 +180,11 @@ public class CallbackService {
      *
      * <p>指数退避: 1s → 2s → 4s → 8s，最多尝试 maxRetries + 1 次。</p>
      *
-     * @param pr 支付请求实体
+     * @param pr    支付请求实体
+     * @param order 实际订单（可能为 null，如重试时找不到）
      * @return true 表示回调成功
      */
-    private boolean executeCallback(PaymentRequest pr) {
+    private boolean executeCallback(PaymentRequest pr, IfdianOrder order) {
         int maxRetries = properties.getCallbackMaxRetries();
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
@@ -188,8 +197,8 @@ public class CallbackService {
                     Thread.sleep(delayMs);
                 }
 
-                // 构建回调 JSON body
-                String body = buildCallbackBody(pr);
+                // 构建回调 JSON body（包含实际订单信息）
+                String body = buildCallbackBody(pr, order);
                 String signature = signBody(body, pr.getSignatureSecret());
 
                 // 发送 HTTP POST
@@ -251,8 +260,11 @@ public class CallbackService {
 
     /**
      * 构建回调 JSON body
+     *
+     * <p>同时包含 PaymentRequest 中的请求信息和 IfdianOrder 中的实际订单数据，
+     * 让调用方能获取用户实际购买的月数和金额（可能与请求时的预期不同）。</p>
      */
-    private String buildCallbackBody(PaymentRequest pr) throws JsonProcessingException {
+    private String buildCallbackBody(PaymentRequest pr, IfdianOrder order) throws JsonProcessingException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("requestId", pr.getRequestId());
         body.put("customOrderId", pr.getCustomOrderId());
@@ -261,10 +273,22 @@ public class CallbackService {
         body.put("planId", pr.getPlanId());
         body.put("userId", pr.getUserId());
 
-        if (pr.getTotalAmount() != null) {
+        // 优先使用实际订单的金额，回退到请求时的预期金额
+        if (order != null && order.getTotalAmount() != null) {
+            body.put("totalAmount", String.format("%.2f", order.getTotalAmount()));
+        } else if (pr.getTotalAmount() != null) {
             body.put("totalAmount", String.format("%.2f", pr.getTotalAmount()));
         } else {
             body.put("totalAmount", null);
+        }
+
+        // 实际订单的额外信息（用户在爱发电页面可能修改了月数等）
+        if (order != null) {
+            body.put("actualMonth", order.getSponsorMonth());
+            body.put("showAmount", order.getShowAmount() != null ? String.format("%.2f", order.getShowAmount()) : null);
+            body.put("discount", order.getDiscount() != null ? String.format("%.2f", order.getDiscount()) : null);
+            body.put("productType", order.getProductType());
+            body.put("userPrivateId", order.getUserPrivateId());
         }
 
         body.put("receivedAt", pr.getUpdatedAt() != null

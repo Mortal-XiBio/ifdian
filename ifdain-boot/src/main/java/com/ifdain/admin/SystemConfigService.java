@@ -3,6 +3,9 @@ package com.ifdain.admin;
 import com.ifdain.entity.SystemConfig;
 import com.ifdain.repository.SystemConfigRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,19 +19,43 @@ import java.util.Optional;
  *
  * <p>提供运行时配置的读写能力，配置值存储在 system_config 表中。
  * 用于管理爱发电视听配置、Webhook 配置等。</p>
+ *
+ * <p>启用 Redis 后自动缓存配置值（TTL 10 分钟），写入时自动失效。</p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SystemConfigService {
 
+    private static final String CACHE_PREFIX = "config:";
+    private static final long CACHE_TTL_SECONDS = 600;
+
     private final SystemConfigRepository configRepository;
 
+    /** Redis 缓存（可选，Redis 不可用时为 null） */
+    @Autowired(required = false)
+    @Lazy
+    private RedisCacheService cache;
+
     /**
-     * 获取配置值
+     * 获取配置值（Redis 缓存优先）
      */
     public Optional<String> get(String key) {
-        return configRepository.findByConfigKey(key)
+        // 1. 尝试从缓存读取
+        if (cache != null) {
+            String cached = cache.get(CACHE_PREFIX + key);
+            if (cached != null) {
+                return Optional.of(cached);
+            }
+        }
+        // 2. 从数据库读取
+        Optional<String> value = configRepository.findByConfigKey(key)
                 .map(SystemConfig::getConfigValue);
+        // 3. 回填缓存
+        if (cache != null && value.isPresent()) {
+            cache.put(CACHE_PREFIX + key, value.get(), CACHE_TTL_SECONDS);
+        }
+        return value;
     }
 
     /**
@@ -80,6 +107,10 @@ public class SystemConfigService {
             config.setDescription(description);
         }
         configRepository.save(config);
+        // 失效缓存
+        if (cache != null) {
+            cache.evict(CACHE_PREFIX + key);
+        }
     }
 
     /**
@@ -104,6 +135,9 @@ public class SystemConfigService {
      */
     public void delete(String key) {
         configRepository.deleteByConfigKey(key);
+        if (cache != null) {
+            cache.evict(CACHE_PREFIX + key);
+        }
     }
 
     /**

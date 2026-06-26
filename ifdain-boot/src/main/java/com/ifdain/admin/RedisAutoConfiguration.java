@@ -1,7 +1,10 @@
 package com.ifdain.admin;
 
 import com.ifdain.config.IfdainProperties;
+import com.ifdain.entity.SystemConfig;
+import com.ifdain.repository.SystemConfigRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -13,11 +16,21 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.util.Optional;
+
 /**
  * Redis 自动配置
  *
- * <p>根据运行时配置（SystemConfigService 或 application.yml）动态创建 Redis 连接。
+ * <p>根据运行时配置（system_config 表或 application.yml）动态创建 Redis 连接。
  * 仅在 {@code ifdain.redis-enabled=true} 时生效。</p>
+ *
+ * <p>直接注入 {@link SystemConfigRepository} 而非 {@link SystemConfigService}，
+ * 以打破 RedisCacheService → RedisTemplate → RedisConnectionFactory → SystemConfigService
+ * 的循环依赖链。</p>
+ *
+ * <p>当 Redis 禁用时，{@link #redisConnectionFactory()} 返回 null（不注册 Bean），
+ * {@link #redisTemplate(RedisConnectionFactory)} 通过 {@code @ConditionalOnBean}
+ * 自动跳过，{@link RedisCacheService} 中 RedisTemplate 为 null，所有方法静默降级。</p>
  */
 @Slf4j
 @Configuration
@@ -25,41 +38,45 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 @EnableConfigurationProperties(IfdainProperties.class)
 public class RedisAutoConfiguration {
 
-    private final SystemConfigService configService;
+    private final SystemConfigRepository configRepository;
     private final IfdainProperties properties;
 
-    public RedisAutoConfiguration(SystemConfigService configService, IfdainProperties properties) {
-        this.configService = configService;
+    public RedisAutoConfiguration(SystemConfigRepository configRepository, IfdainProperties properties) {
+        this.configRepository = configRepository;
         this.properties = properties;
     }
 
     /**
      * Redis 连接工厂
-     * <p>仅当启用 Redis 时创建。</p>
+     * <p>当 Redis 禁用时返回 null，不注册该 Bean。</p>
      */
     @Bean
     @ConditionalOnClass(RedisConnectionFactory.class)
     public RedisConnectionFactory redisConnectionFactory() {
-        // 检查 Redis 是否启用
-        String enabledStr = configService.getOrDefault(
+        String enabledStr = getConfigOrDefault(
                 SystemConfigService.KEY_REDIS_ENABLED,
                 String.valueOf(properties.isRedisEnabled()));
         boolean enabled = "true".equals(enabledStr);
 
         if (!enabled) {
             log.info("[Ifdain] Redis is disabled, skipping RedisConnectionFactory creation");
-            // 返回一个未连接的工厂作为占位
-            return new LettuceConnectionFactory();
+            return null;
         }
 
-        // 从运行时配置读取（优先）或回退到静态默认值
-        String host = configService.getOrDefault(
+        String host = getConfigOrDefault(
                 SystemConfigService.KEY_REDIS_HOST, properties.getRedisHost());
-        int port = Integer.parseInt(configService.getOrDefault(
+        // 防御性清理：去掉空格和尾部斜杠，避免 Lettuce 拼出 host/:port
+        if (host != null) {
+            host = host.trim();
+            while (host.endsWith("/")) {
+                host = host.substring(0, host.length() - 1);
+            }
+        }
+        int port = Integer.parseInt(getConfigOrDefault(
                 SystemConfigService.KEY_REDIS_PORT, String.valueOf(properties.getRedisPort())));
-        String password = configService.getOrDefault(
+        String password = getConfigOrDefault(
                 SystemConfigService.KEY_REDIS_PASSWORD, properties.getRedisPassword());
-        int database = Integer.parseInt(configService.getOrDefault(
+        int database = Integer.parseInt(getConfigOrDefault(
                 SystemConfigService.KEY_REDIS_DATABASE, String.valueOf(properties.getRedisDatabase())));
 
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
@@ -78,10 +95,11 @@ public class RedisAutoConfiguration {
 
     /**
      * RedisTemplate
+     * <p>仅在 RedisConnectionFactory Bean 存在时创建。</p>
      */
     @Bean
+    @ConditionalOnBean(RedisConnectionFactory.class)
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
-        // 如果 Redis 未启用，connectionFactory 是未连接的占位，仍然可以创建 template
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
@@ -90,5 +108,19 @@ public class RedisAutoConfiguration {
         template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
         template.afterPropertiesSet();
         return template;
+    }
+
+    /**
+     * 从 system_config 表读取配置，不存在时回退到默认值。
+     * <p>直接操作 Repository 而非 Service，避免循环依赖。</p>
+     */
+    private String getConfigOrDefault(String key, String defaultValue) {
+        try {
+            Optional<SystemConfig> config = configRepository.findByConfigKey(key);
+            return config.map(SystemConfig::getConfigValue).orElse(defaultValue);
+        } catch (Exception e) {
+            log.debug("[Ifdain] Error reading config key={}, using default: {}", key, e.getMessage());
+            return defaultValue;
+        }
     }
 }

@@ -39,6 +39,7 @@ public class PlansController {
     private final AdminProperties adminProperties;
     private final SystemConfigService configService;
     private final AfdianApiClient apiClient;
+    private final CachedApiService cachedApi;
     private final ObjectMapper objectMapper;
     private final BrowserAutomationService browserAutomation;
     private final IfdianPlanApiService planApiService;
@@ -289,7 +290,7 @@ public class PlansController {
     @ResponseBody
     public Map<String, Object> discover(@RequestParam(defaultValue = "3") int maxPages,
                                          @RequestParam(defaultValue = "100") int perPage) {
-        List<Map<String, String>> plans = apiClient.discoverPlans(maxPages, perPage);
+        List<Map<String, String>> plans = cachedApi.discoverPlans(maxPages, perPage);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", true);
         result.put("message", String.format("发现 %d 个赞助方案（扫描了最多 %d 页订单）", plans.size(), maxPages));
@@ -304,7 +305,7 @@ public class PlansController {
     @PostMapping("/query")
     @ResponseBody
     public Map<String, Object> queryPlan(@RequestParam String planId) {
-        JsonNode apiResult = apiClient.queryPlan(planId);
+        JsonNode apiResult = cachedApi.queryPlan(planId);
         Map<String, Object> result = new LinkedHashMap<>();
         if (apiResult == null) {
             result.put("success", false);
